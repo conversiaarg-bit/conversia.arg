@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiExcludeEndpoint } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SkipTransform } from '../common/decorators/skip-transform.decorator';
 import { WhatsappService } from './whatsapp.service';
 
 @ApiTags('whatsapp')
@@ -12,6 +13,7 @@ export class WhatsappController {
   constructor(private readonly whatsappService: WhatsappService) {}
 
   @Get('webhook')
+  @SkipTransform()
   @ApiExcludeEndpoint()
   verifyWebhook(
     @Query('hub.mode') mode: string,
