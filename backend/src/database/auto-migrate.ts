@@ -100,32 +100,38 @@ async function ensureNewTables(pool: Pool): Promise<void> {
     );
   `);
 
-  // CEO / admin owner — idempotent, kept in sync on every boot
-  await pool.query(`
-    INSERT INTO users (email, password_hash, full_name, role, status, email_verified)
-    VALUES ('ugartealan776@gmail.com',
-            '$2a$12$dZtO7SboA28bzNqwcrF/4undBPFqdv.OLzbO2jOmT7bh6Pr/zXNc2',
-            'Alan Ugarte - CEO', 'admin', 'active', TRUE)
-    ON CONFLICT (email) DO UPDATE
-      SET password_hash = EXCLUDED.password_hash,
-          full_name = EXCLUDED.full_name,
-          role = 'admin', status = 'active', email_verified = TRUE
-  `);
+  // Owners / admins — idempotentes, se mantienen sincronizados en cada boot.
+  // Mismo hash bcrypt = misma contraseña (43005969Alan.) para ambos.
+  const OWNERS = [
+    { email: 'ugartealan776@gmail.com', name: 'Alan Ugarte - CEO' },
+    { email: 'conversia.arg@gmail.com', name: 'Conversia - Owner' },
+  ];
+  for (const o of OWNERS) {
+    await pool.query(
+      `INSERT INTO users (email, password_hash, full_name, role, status, email_verified)
+       VALUES ($1, '$2a$12$dZtO7SboA28bzNqwcrF/4undBPFqdv.OLzbO2jOmT7bh6Pr/zXNc2', $2, 'admin', 'active', TRUE)
+       ON CONFLICT (email) DO UPDATE
+         SET password_hash = EXCLUDED.password_hash,
+             full_name = EXCLUDED.full_name,
+             role = 'admin', status = 'active', email_verified = TRUE`,
+      [o.email, o.name],
+    );
+  }
 }
 
 // Limpieza de datos de prueba/ficticios. Se activa SOLO con la env RESET_DEMO.
 // Conserva la cuenta CEO y el esquema; borra el resto de datos y usuarios de prueba.
 async function cleanDemoData(pool: Pool): Promise<void> {
   if (!process.env.RESET_DEMO) return;
-  const CEO = 'ugartealan776@gmail.com';
   const dataTables = ['creatives', 'projects', 'ai_generations', 'credit_transactions', 'credit_purchases', 'leads', 'campaigns', 'user_integrations', 'brand_products', 'brand_profiles', 'subscriptions'];
   let removed = 0;
   for (const t of dataTables) {
     try { const r = await pool.query(`DELETE FROM ${t}`); removed += r.rowCount ?? 0; } catch { /* la tabla puede no existir */ }
   }
   try {
-    const r = await pool.query('DELETE FROM users WHERE lower(email) <> $1', [CEO]);
-    console.log(`🧹 RESET_DEMO: ${removed} filas de datos borradas + ${r.rowCount ?? 0} usuarios de prueba eliminados (CEO conservado).`);
+    // Conserva TODOS los admins/owners; borra solo usuarios de prueba (clientes/subusuarios).
+    const r = await pool.query(`DELETE FROM users WHERE role <> 'admin'`);
+    console.log(`🧹 RESET_DEMO: ${removed} filas de datos borradas + ${r.rowCount ?? 0} usuarios de prueba eliminados (admins conservados).`);
   } catch (e: any) {
     console.log(`🧹 RESET_DEMO: ${removed} filas de datos borradas; usuarios no se pudieron limpiar (${e.message}).`);
   }
