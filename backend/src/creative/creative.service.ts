@@ -113,14 +113,15 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
       700,
     );
 
-    const out: Array<{ key: string; label: string; description: string; prompt: string; url: string; model: string }> = [];
-    for (const angle of VARIANT_ANGLES.slice(0, limit)) {
+    // Las 3 variantes se generan EN PARALELO (antes secuencial ~60s → ahora ~20s;
+    // clave para no pasarse del timeout del proxy de Vercel).
+    const out = await Promise.all(VARIANT_ANGLES.slice(0, limit).map(async angle => {
       const p = prompts.find(x => x.key === angle.key)?.prompt
         ?? `${input.product.name}, ${styleDesc}, ${angle.desc}, professional Meta Ads creative, photorealistic, no watermark`;
       const r = await this.imageProvider.generate({ prompt: p, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage });
       const url = await this.persist(r.dataUrl, 'image');
-      out.push({ key: angle.key, label: angle.label, description: angle.desc, prompt: p, url, model: r.model });
-    }
+      return { key: angle.key, label: angle.label, description: angle.desc, prompt: p, url, model: r.model };
+    }));
     return out;
   }
 
