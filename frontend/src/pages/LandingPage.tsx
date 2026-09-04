@@ -1,5 +1,6 @@
 import { useState, type ReactNode, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
+import LogoMark from '../components/LogoMark';
 
 const P = {
   bg: '#000', card: '#0f0f1c', bg2: '#0a0a14', border: '#1c1c2e', border2: '#2a2a42',
@@ -24,7 +25,7 @@ const btnPrimary: CSSProperties = { display: 'inline-flex', alignItems: 'center'
 const btnGhost: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,.05)', color: P.text, border: `1px solid ${P.border2}`, borderRadius: 12, padding: '11px 18px', fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' };
 
 function Logo({ size = 30 }: { size?: number }) {
-  return <span style={{ display: 'inline-grid', placeItems: 'center', width: size, height: size, borderRadius: size * .28, background: `linear-gradient(135deg,${P.violet},${P.violetD})`, color: '#fff', fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: size * .5, boxShadow: `0 8px 20px -8px ${P.violet}` }}>✦</span>;
+  return <LogoMark size={size} />;
 }
 function Area() {
   const line = 'M0,86 C34,74 52,84 78,64 C104,46 120,58 150,42 C180,28 200,36 232,26 C262,17 282,22 320,10';

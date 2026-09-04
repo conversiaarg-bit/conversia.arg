@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Zap, ArrowLeft, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import LogoMark from '../components/LogoMark';
 import { useAuth } from '../hooks/useAuth';
 import { Spinner } from '../components/ui';
 import type { Plan } from '../types';
@@ -86,12 +87,10 @@ export default function AuthPage() {
       >
         {/* Logo */}
         <div className="flex items-center justify-center gap-2.5 mb-7">
-          <div className="w-9 h-9 rounded-xl bg-grad flex items-center justify-center shadow-glow">
-            <Zap size={16} className="text-white" />
-          </div>
+          <LogoMark size={38} />
           <div>
             <div className="font-syne font-extrabold text-[15px] text-text tracking-tight">CONVERSIA</div>
-            <div className="text-[9px] text-muted font-mono tracking-widest uppercase">ADS SUITE</div>
+            <div className="text-[9px] text-muted font-mono tracking-widest uppercase">Tech · Meta Ads</div>
           </div>
         </div>
 

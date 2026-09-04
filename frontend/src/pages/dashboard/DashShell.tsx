@@ -8,6 +8,7 @@ import {
   Zap, TrendingUp, FolderOpen, Palette,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import LogoMark from '../../components/LogoMark';
 
 const NAV_MAIN = [
   { path: '/dashboard',              label: 'Dashboard',     icon: LayoutDashboard, end: true },
@@ -112,13 +113,11 @@ export default function DashShell() {
     <>
       {/* Logo */}
       <div className={['flex items-center border-b border-border', mini ? 'justify-center py-5' : 'gap-3 px-4 py-5'].join(' ')}>
-        <div className="w-8 h-8 rounded-xl bg-grad flex items-center justify-center flex-shrink-0 shadow-glow">
-          <Zap size={14} className="text-white" />
-        </div>
+        <LogoMark size={34} />
         {!mini && (
           <div className="min-w-0">
             <div className="font-syne font-bold text-[13px] text-text leading-tight">CONVERSIA</div>
-            <div className="text-[10px] text-muted font-mono">ADS SUITE</div>
+            <div className="text-[10px] text-muted font-mono">Tech · Meta Ads</div>
           </div>
         )}
       </div>
