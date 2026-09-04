@@ -4,7 +4,7 @@ export const PROVIDERS = {
   image: process.env.IMAGE_PROVIDER ?? 'openai',            // openai
   video: process.env.VIDEO_PROVIDER ?? 'seedance',          // seedance | magnific
   copy:  process.env.COPY_PROVIDER ?? 'openai',             // openai
-  openaiImageModel: process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2',
+  openaiImageModel: process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-1',
   openaiChatModel:  process.env.OPENAI_CHAT_MODEL ?? 'gpt-4o-mini',
   seedance: {
     apiKey: process.env.SEEDANCE_API_KEY ?? '',
