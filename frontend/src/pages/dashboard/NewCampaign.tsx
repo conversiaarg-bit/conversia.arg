@@ -138,32 +138,31 @@ export default function NewCampaign() {
     return (res.data as any)?.data?.files ?? [];
   }, []);
 
-  // Generate AI images when entering step 3
+  // Al entrar al paso 3: SOLO placeholders gratis (canvas). La IA real se genera
+  // con un botón, para NO gastar automáticamente cada vez que se entra al paso.
   useEffect(() => {
     if (step !== 3 || !strategy) return;
     const hook = strategy.hook || form.name || 'Oferta especial';
     const product = form.name || 'Producto';
     const style = strategy.styleNotes ?? 'Hook urgencia';
+    Promise.all(
+      CREATIVE_CONFIGS.map(cfg =>
+        generateCreativeImage({ hook, product, format: cfg.fmt, style, avatarEmoji: cfg.emoji, gradientFrom: cfg.from, gradientTo: cfg.to })
+      )
+    ).then(setCreativeImages);
+  }, [step, strategy]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // productPhotoUrl is set explicitly in goToCreatives() — no stale closure issue
-    void productPhotoUrl;
-
-    setGeneratingImages(true);
-    setFluxError('');
-
-    if (false) {
-      // (placeholder — photo editing now goes through the shared Promise.all below)
-    } else {
-      // No photo uploaded — show canvas placeholder then replace with FLUX.1
-      Promise.all(
-        CREATIVE_CONFIGS.map(cfg =>
-          generateCreativeImage({ hook, product, format: cfg.fmt, style, avatarEmoji: cfg.emoji, gradientFrom: cfg.from, gradientTo: cfg.to })
-        )
-      ).then(placeholders => setCreativeImages(placeholders));
-
-      const description = form.desc || undefined;
-      const photoUrl2 = productPhotoUrl;
-      Promise.all(
+  // Generación PAGA de creativos con IA (solo al apretar el botón)
+  const genCreatives = async () => {
+    if (!strategy) return;
+    const hook = strategy.hook || form.name || 'Oferta especial';
+    const product = form.name || 'Producto';
+    const style = strategy.styleNotes ?? 'Hook urgencia';
+    const description = form.desc || undefined;
+    const photoUrl2 = productPhotoUrl;
+    setGeneratingImages(true); setFluxError('');
+    try {
+      const images = await Promise.all(
         CREATIVE_CONFIGS.map(cfg =>
           (photoUrl2
             ? editProductImage(photoUrl2, product, style, cfg.fmt, hook, description)
@@ -174,12 +173,10 @@ export default function NewCampaign() {
             return generateCreativeImage({ hook, product, format: cfg.fmt, style, avatarEmoji: cfg.emoji, gradientFrom: cfg.from, gradientTo: cfg.to });
           })
         )
-      ).then(images => {
-        setCreativeImages(images);
-        setGeneratingImages(false);
-      });
-    }
-  }, [step, productPhotoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+      );
+      setCreativeImages(images);
+    } finally { setGeneratingImages(false); }
+  };
 
   const runAnalysis = async () => {
     if (!form.name.trim() && !form.desc.trim()) return;
@@ -492,9 +489,14 @@ export default function NewCampaign() {
 
             return (
               <div>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 17, marginBottom: 14 }}>
-                  Creativos generados por IA
-                  {photoUrl && <span style={{ fontSize: 10, color: C.green, marginLeft: 8, fontFamily: "'DM Mono',monospace" }}>✓ usando tu foto</span>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                  <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 17 }}>
+                    Creativos por IA
+                    {photoUrl && <span style={{ fontSize: 10, color: C.green, marginLeft: 8, fontFamily: "'DM Mono',monospace" }}>✓ usando tu foto</span>}
+                  </div>
+                  <button className="btn btn-p" style={{ marginLeft: 'auto', fontSize: 12, padding: '7px 13px' }} onClick={genCreatives} disabled={generatingImages}>
+                    {generatingImages ? <><Spinner size={12} color="#fff" /> Generando…</> : '✨ Generar 3 con IA'}
+                  </button>
                 </div>
 
                 {!photoUrl && generatingImages && (
