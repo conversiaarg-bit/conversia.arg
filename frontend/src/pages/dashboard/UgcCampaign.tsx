@@ -77,7 +77,8 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
     if (!window.confirm(`Generar la campaña completa usará ${totalCost} créditos (${plan.scenes.length} escenas × ${sceneCost}). Tenés ${credits}. ¿Continuar?`)) return;
     cancelRef.current = false;
     setRunning(true); setErr(null);
-    pushMsg('copilot', `Generando la campaña — ${plan.scenes.length} escenas con Seedance. Te aviso escena por escena…`);
+    pushMsg('copilot', `Generando la campaña — ${plan.scenes.length} escenas. Te aviso escena por escena…`);
+    let anyVideo = false;
     for (let i = 0; i < plan.scenes.length; i++) {
       if (cancelRef.current) { pushMsg('copilot', '⏸ Generación cancelada. Los nodos ya listos quedan guardados.'); break; }
       const scene = plan.scenes[i];
@@ -85,8 +86,9 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
       try {
         const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format });
         setCredits(res.credits);
-        setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl } }));
-        pushMsg('copilot', `✓ Escena ${i + 1} (${scene.title}) lista.`);
+        if (res.videoUrl) anyVideo = true;
+        setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
+        pushMsg('copilot', res.videoUrl ? `✓ Escena ${i + 1} (${scene.title}) lista.` : `✓ Escena ${i + 1} (${scene.title}): imagen lista (el video queda pendiente hasta activar Seedance).`);
       } catch (e: any) {
         setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'error' } }));
         const sc = e?.response?.data?.message === 'SIN_CREDITOS';
@@ -95,7 +97,11 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
         break;
       }
     }
-    if (Object.values(runs).every(r => r.status !== 'error')) pushMsg('copilot', '🎬 Escenas listas. Podés "Ensamblar video final" y guardar la campaña como proyecto.');
+    if (Object.values(runs).every(r => r.status !== 'error')) {
+      pushMsg('copilot', anyVideo
+        ? '🎬 Escenas listas. Podés "Ensamblar video final" y guardar la campaña como proyecto.'
+        : '🖼️ Imágenes de las escenas listas. Los videos quedan pendientes hasta que actives Seedance — mientras tanto podés descargar/guardar las imágenes.');
+    }
     setRunning(false);
   };
 
@@ -128,7 +134,7 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
     try {
       const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format });
       setCredits(res.credits);
-      setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl } }));
+      setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
       pushMsg('copilot', `✓ Escena ${i + 1} lista.`);
     } catch (e: any) {
       setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'error' } }));

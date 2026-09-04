@@ -143,10 +143,14 @@ export class CreativeController {
   @Post('ugc-campaign/scene') @HttpCode(HttpStatus.OK)
   @Throttle({ medium: { limit: 12, ttl: 60000 } })
   async ugcScene(@Body() body: any, @Request() req: any) {
-    await this.assertFree(req, 'video');
-    const { result, credits, creditsUsed } = await this.billed(req,
-      { operation: 'ugc_video_10', amount: CREDIT_COSTS.ugc_video_10, provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds: 10 },
-      () => this.svc.generateUGCScene(body));
+    // Si Seedance no está configurado, la escena genera SOLO la imagen → se cobra
+    // como imagen (no como video-UGC). Así no perdés plata por videos que no salen.
+    const hasVideo = this.svc.videoAvailable;
+    await this.assertFree(req, hasVideo ? 'video' : 'image');
+    const billing = hasVideo
+      ? { operation: 'ugc_video_10' as CreditOperation, amount: CREDIT_COSTS.ugc_video_10, provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds: 10 }
+      : { operation: 'image_standard' as CreditOperation, amount: CREDIT_COSTS.image_standard, provider: PROVIDERS.image, model: PROVIDERS.openaiImageModel };
+    const { result, credits, creditsUsed } = await this.billed(req, billing, () => this.svc.generateUGCScene(body));
     return { ...(result as any), credits, creditsUsed };
   }
 

@@ -49,7 +49,7 @@ export const creativeApi = {
   ugcPlan: (body: { product: ProductInfo; creatorKey?: string }) =>
     D<{ creator: string; scenes: UgcScene[] }>(api.post('/creative/ugc-campaign/plan', body, { timeout: 90_000 })),
   ugcScene: (body: { product: ProductInfo; scene: UgcScene; referenceImage?: string; format?: Fmt }) =>
-    D<{ imageUrl: string; videoUrl: string; sceneKey: string; credits: number; creditsUsed: number }>(api.post('/creative/ugc-campaign/scene', body, { timeout: 200_000, ...idem() })),
+    D<{ imageUrl: string; videoUrl: string | null; videoPending?: boolean; sceneKey: string; credits: number; creditsUsed: number }>(api.post('/creative/ugc-campaign/scene', body, { timeout: 200_000, ...idem() })),
 
   tts: (text: string, voice?: string) => D<{ audioUrl: string }>(api.post('/creative/tts', { text, voice }, { timeout: 60_000 })),
   assembleFinal: (videoUrls: string[], musicUrl?: string) => D<{ videoUrl: string }>(api.post('/creative/ugc-campaign/assemble', { videoUrls, musicUrl }, { timeout: 200_000 })),

@@ -61,6 +61,10 @@ export class CreativeService {
     private readonly storage: StorageService,
   ) {}
 
+  // El controller lo usa para decidir el costo/operación ANTES de generar (ej.
+  // cobrar como imagen y no como video-UGC si Seedance todavía no está configurado).
+  get videoAvailable(): boolean { return this.videoProvider.enabled; }
+
   // ── PASO 1: Analizar producto (texto y/o foto) ──────────────────────────────
   async analyzeProduct(input: { name?: string; description?: string; imageBase64?: string }): Promise<ProductInfo> {
     const sys = 'Sos un estratega de marketing. Analizás un producto para publicidad en Latinoamérica.';
@@ -187,6 +191,17 @@ Devolvé JSON: { "creatorKey": "<una key>", "scene": "escenario en inglés acord
     const img = await this.imageProvider.generate({ prompt: imgPrompt, format: input.format ?? '9:16', quality: 'standard', referenceImage: input.referenceImage });
     const imageUrl = await this.persist(img.dataUrl, 'image');
 
+    // Sin proveedor de video configurado (ej. Seedance sin implementar todavia): se
+    // devuelve la imagen igual en vez de tirar la llamada (y la imagen ya pagada)
+    // a la basura. El controller ya cobro esto como imagen, no como video.
+    if (!this.videoProvider.enabled) {
+      return {
+        imageUrl, videoUrl: null, videoPending: true,
+        creator: { key: creator.key, name: creator.name },
+        script: { hook: input.hook ?? '', action: input.action ?? '', cta: input.cta ?? '' },
+      };
+    }
+
     // Video UGC: movimiento natural de persona interactuando con el producto
     const animation = `Natural UGC video: the person looks at the camera, holds and shows the product, subtle natural body and hand movements, slight handheld camera motion, organic smartphone-recorded feel. Not a TV commercial.`;
     const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: animation, duration: Number(duration) as 5 | 10, resolution: '1080p' });
@@ -223,6 +238,13 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
       format: input.format ?? '9:16', quality: 'standard', referenceImage: input.referenceImage,
     });
     const imageUrl = await this.persist(img.dataUrl, 'image');
+
+    // Sin proveedor de video (Seedance sin configurar): devolvemos la imagen igual,
+    // marcando el video como pendiente. No perdemos la imagen ya generada/pagada.
+    if (!this.videoProvider.enabled) {
+      return { imageUrl, videoUrl: null, videoPending: true, sceneKey: input.scene.key };
+    }
+
     const dur = (input.scene.seconds ?? 8) >= 9 ? 10 : 5;
     const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: input.scene.videoPrompt || 'natural UGC movement, person interacting with the product', duration: dur as 5 | 10, resolution: '1080p' });
     return { imageUrl, videoUrl: vid.url, model: vid.model, seconds: vid.seconds, sceneKey: input.scene.key };
