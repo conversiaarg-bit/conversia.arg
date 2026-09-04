@@ -44,6 +44,7 @@ export default () => ({
     appSecret: process.env.META_APP_SECRET ?? '',
     apiVersion: process.env.META_API_VERSION ?? 'v19.0',
     webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN ?? '',
+    loginConfigId: process.env.META_LOGIN_CONFIG_ID ?? '', // "Inicio de sesión con Facebook para empresas"
   },
 
   whatsapp: {

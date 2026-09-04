@@ -280,13 +280,19 @@ export class MetaAdsService {
   oauthUrl(userId: string, backendBase: string): { url: string } {
     if (!this.appId) throw new BadRequestException('Meta no está configurado en el servidor (falta META_APP_ID).');
     const state = this.encryption.encrypt(`${userId}:${Date.now()}`);
-    const scope = ['ads_management', 'ads_read', 'pages_show_list', 'pages_read_engagement', 'business_management'].join(',');
-    const url = `https://www.facebook.com/${this.apiVersion}/dialog/oauth`
+    const configId = this.config.get<string>('meta.loginConfigId', '');
+    let url = `https://www.facebook.com/${this.apiVersion}/dialog/oauth`
       + `?client_id=${encodeURIComponent(this.appId)}`
       + `&redirect_uri=${encodeURIComponent(this.redirectUri(backendBase))}`
       + `&state=${encodeURIComponent(state)}`
-      + `&scope=${encodeURIComponent(scope)}`
       + `&response_type=code`;
+    if (configId) {
+      // "Inicio de sesión con Facebook para empresas": los permisos van en la configuración
+      url += `&config_id=${encodeURIComponent(configId)}`;
+    } else {
+      // Login clásico por scopes
+      url += `&scope=${encodeURIComponent(['ads_management', 'ads_read', 'pages_show_list', 'pages_read_engagement', 'business_management'].join(','))}`;
+    }
     return { url };
   }
 
