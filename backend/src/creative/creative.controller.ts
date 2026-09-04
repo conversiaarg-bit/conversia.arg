@@ -113,7 +113,12 @@ export class CreativeController {
     const op: CreditOperation = seconds === 10 ? 'video_10' : 'video_5';
     const { result, credits, creditsUsed } = await this.billed(req, { operation: op, amount: CREDIT_COSTS[op], provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds },
       () => this.svc.generateVideo(body));
-    return { ...(result as any), credits, creditsUsed };
+    const r = result as any;
+    this.svc.saveCreative(req.user.id, {
+      name: `Video — ${body?.product?.name ?? 'producto'}`, type: 'video',
+      videoUrl: r.videoUrl, studio: { product: body?.product }, creditsUsed,
+    }).catch(() => { /* no bloquea */ });
+    return { ...r, credits, creditsUsed };
   }
 
   // PASO 6 — copy (gratis para el usuario; registramos su costo real de IA)
@@ -159,7 +164,14 @@ export class CreativeController {
       ? { operation: 'ugc_video_10' as CreditOperation, amount: CREDIT_COSTS.ugc_video_10, provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds: 10 }
       : { operation: 'image_standard' as CreditOperation, amount: CREDIT_COSTS.image_standard, provider: PROVIDERS.image, model: PROVIDERS.openaiImageModel };
     const { result, credits, creditsUsed } = await this.billed(req, billing, () => this.svc.generateUGCScene(body));
-    return { ...(result as any), credits, creditsUsed };
+    // Auto-guardar la escena en el historial para que NO se pierda (fire-and-forget)
+    const r = result as any;
+    this.svc.saveCreative(req.user.id, {
+      name: `Escena ${body?.scene?.title ?? body?.scene?.key ?? ''} — ${body?.product?.name ?? 'UGC'}`.trim(),
+      format: body?.format ?? '9:16', type: r.videoUrl ? 'video' : 'image',
+      imageUrl: r.imageUrl, videoUrl: r.videoUrl, studio: { scene: body?.scene, product: body?.product }, creditsUsed,
+    }).catch(() => { /* no bloquea la respuesta */ });
+    return { ...r, credits, creditsUsed };
   }
 
   // Texto a voz (TTS real). Gratis para el usuario; registramos su costo real de IA.

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { C } from '../../styles/theme';
 import { Spinner } from '../../components/ui';
 import { creativeApi, type Fmt, type ProductInfo, type ImageVariant, type CopyVariant, type Strategy } from '../../api/creative';
+import { workspaceApi } from '../../api/workspace';
 import { aiCreditsConfig } from '../../config/aiCreditsConfig';
 import UgcCampaign from './UgcCampaign';
 
@@ -745,27 +746,56 @@ function StepResultado({ s, onRegenImage, onRegenVideo, onRegenCopy, onCampaign,
 // ── Historial ─────────────────────────────────────────────────────────────────
 function History() {
   const [items, setItems] = useState<any[] | null>(null);
-  const [filter, setFilter] = useState<'all' | 'image' | 'video' | 'fav'>('all');
+  const [projects, setProjects] = useState<any[]>([]);
+  const [filter, setFilter] = useState<'image' | 'video' | 'template' | 'fav'>('image');
   const load = () => creativeApi.list().then(setItems).catch(() => setItems([]));
-  useEffect(() => { load(); }, []);
+  const loadProjects = () => workspaceApi.listProjects().then(setProjects).catch(() => setProjects([]));
+  useEffect(() => { load(); loadProjects(); }, []);
   const del = async (id: string) => { await creativeApi.remove(id).catch(() => {}); load(); };
   const fav = async (id: string) => { await creativeApi.favorite(id).catch(() => {}); load(); };
+  const delProject = async (id: string) => { await workspaceApi.removeProject(id).catch(() => {}); loadProjects(); };
   if (!items) return <div style={{ padding: 40 }}><Spinner size={24} /></div>;
 
-  const FILTERS: [typeof filter, string][] = [['all', 'Todos'], ['image', 'Imágenes'], ['video', 'Videos'], ['fav', 'Favoritos']];
-  const shown = items.filter(it => filter === 'all' ? true : filter === 'fav' ? it.is_favorite : filter === 'video' ? it.video_url : (it.output_url && !it.video_url));
+  const FILTERS: [typeof filter, string][] = [['image', '🖼️ Imágenes'], ['video', '🎬 Videos'], ['template', '📁 Plantillas'], ['fav', '⭐ Favoritos']];
+  const shown = filter === 'template' ? [] : items.filter(it => filter === 'fav' ? it.is_favorite : filter === 'video' ? it.video_url : (it.output_url && !it.video_url));
 
   return (
     <div style={{ padding: '28px clamp(16px,3vw,40px)' }}>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
+      <div style={{ marginBottom: 6 }}>
+        <h2 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 22, margin: 0 }}>Mis creativos</h2>
+        <div style={{ fontSize: 13, color: C.textMuted, marginTop: 2 }}>Todo lo que generás se guarda solo acá. No se pierde nada.</div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, margin: '16px 0 18px', flexWrap: 'wrap' }}>
         {FILTERS.map(([k, lbl]) => (
-          <button key={k} onClick={() => setFilter(k)} style={{ padding: '7px 14px', borderRadius: 9, border: `1px solid ${filter === k ? C.accent : C.border}`, background: filter === k ? C.accentDim : 'transparent', color: filter === k ? C.text : C.textMuted, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>{lbl}</button>
+          <button key={k} onClick={() => setFilter(k)} style={{ padding: '8px 15px', borderRadius: 9, border: `1px solid ${filter === k ? C.accent : C.border}`, background: filter === k ? C.accentDim : 'transparent', color: filter === k ? C.text : C.textMuted, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+            {lbl} <span style={{ opacity: 0.6, fontSize: 11 }}>({k === 'template' ? projects.length : k === 'fav' ? items.filter(i => i.is_favorite).length : k === 'video' ? items.filter(i => i.video_url).length : items.filter(i => i.output_url && !i.video_url).length})</span>
+          </button>
         ))}
       </div>
-      {shown.length === 0 ? (
+
+      {filter === 'template' ? (
+        projects.length === 0 ? (
+          <div style={{ padding: 60, textAlign: 'center', color: C.textMuted }}><div style={{ fontSize: 30, marginBottom: 8 }}>📁</div>Todavía no guardaste ninguna plantilla. En una campaña, tocá <b>💾 Guardar</b> y queda acá para reutilizar.</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16 }}>
+            {projects.map(p => (
+              <div key={p.id} style={{ borderRadius: 14, overflow: 'hidden', border: `1px solid ${C.border}`, background: C.surface }}>
+                <div style={{ aspectRatio: '3/4', background: C.surface2 }}>
+                  {p.thumbnail_url ? <img src={p.thumbnail_url} alt={p.name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: C.textDim, fontSize: 30 }}>📁</div>}
+                </div>
+                <div style={{ padding: 12 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: C.textMuted, margin: '2px 0 8px' }}>{new Date(p.created_at).toLocaleDateString()} · {p.credits_used ?? 0} créditos</div>
+                  <Btn small ghost onClick={() => delProject(p.id)}>🗑️ Borrar</Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : shown.length === 0 ? (
         <div style={{ padding: 60, textAlign: 'center', color: C.textMuted }}>
           <div style={{ fontSize: 30, marginBottom: 8 }}>🖼️</div>
-          {items.length === 0 ? 'Tu biblioteca está vacía. Creá tu primera campaña y empezá a generar contenido.' : 'No hay creativos en este filtro.'}
+          {items.length === 0 ? 'Tu biblioteca está vacía. Creá tu primera campaña y empezá a generar contenido — se guarda solo.' : 'No hay creativos en esta sección.'}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16 }}>
