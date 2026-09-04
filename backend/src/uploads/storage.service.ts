@@ -24,6 +24,10 @@ export class StorageService implements OnModuleInit {
   private useS3 = false;
   private uploadsDir = join(process.cwd(), 'uploads');
 
+  // true si hay storage en la nube (S3/R2). Si es false, conviene guardar la media
+  // como data URL (persiste en DB) en vez de disco efímero que se borra en cada deploy.
+  get cloud(): boolean { return this.useS3; }
+
   onModuleInit() {
     const bucket = process.env.AWS_S3_BUCKET;
     const region = process.env.AWS_REGION ?? 'us-east-1';

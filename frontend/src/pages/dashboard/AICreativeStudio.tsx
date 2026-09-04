@@ -109,7 +109,8 @@ export default function AICreativeStudio() {
     try { const raw = localStorage.getItem('cv_studio'); if (raw) { const d = JSON.parse(raw); if (d.s) setS(d.s); if (d.view) setView(d.view); if (d.step) setStep(d.step); } } catch { /* ignore */ }
   }, []);
   useEffect(() => {
-    try { localStorage.setItem('cv_studio', JSON.stringify({ s: { ...s, imageBase64: undefined, images: undefined }, view, step })); } catch { /* quota */ }
+    // Guardamos solo lo liviano (sin data URLs de imágenes/variantes) para no romper la cuota.
+    try { localStorage.setItem('cv_studio', JSON.stringify({ s: { ...s, imageBase64: undefined, images: undefined, variants: [], selectedImage: undefined, videoUrl: undefined }, view, step })); } catch { /* quota */ }
   }, [s, view, step]);
 
   const [busy, setBusy] = useState<string | null>(null);       // clave de LOADING_MSGS
@@ -127,8 +128,9 @@ export default function AICreativeStudio() {
     creativeApi.costs().then(r => { setCosts({ ...aiCreditsConfig, ...r.costs }); setCredits(r.credits); }).catch(() => {});
   }, []);
 
-  const goto = (n: number) => { setErr(null); setStep(n); };
-  const reset = () => { setS(EMPTY); setStep(1); setErr(null); };
+  const [maxStep, setMaxStep] = useState(1);
+  const goto = (n: number) => { setErr(null); setStep(n); setMaxStep(m => Math.max(m, n)); };
+  const reset = () => { setS(EMPTY); setStep(1); setMaxStep(1); setErr(null); };
 
   // helper: envuelve una acción con estado de carga + manejo de error
   const run = async (key: string, fn: () => Promise<void>) => {
@@ -216,7 +218,7 @@ export default function AICreativeStudio() {
         <History />
       ) : (
         <div style={{ display: 'flex', gap: 0, minHeight: 'calc(100vh - 64px)' }}>
-          <StepRail step={step} />
+          <StepRail step={step} maxStep={maxStep} goto={goto} />
           <main style={{ flex: 1, padding: '28px clamp(16px,3vw,40px)', maxWidth: 1100, margin: '0 auto', width: '100%' }}>
             {busy && <LoadingState msgs={LOADING_MSGS[busy] ?? ['Generando…']} />}
 
@@ -228,7 +230,7 @@ export default function AICreativeStudio() {
               <>
                 {step === 1 && <StepProducto s={s} patch={patch} patchProduct={patchProduct} onAnalyze={analyze} onNext={() => goto(2)} onAddImages={addImages} onRemoveImage={removeImage} />}
                 {step === 2 && <StepObjetivo s={s} setObjective={(o: string) => patch({ objective: o })} onBack={() => goto(1)} onNext={() => goto(3)} />}
-                {step === 3 && <StepEstilo s={s} setStyle={(st: string) => patch({ style: st })} onBack={() => goto(2)} onNext={buildStrategyAndGo} />}
+                {step === 3 && <StepEstilo s={s} setStyle={(st: string) => patch({ style: st })} onBack={() => goto(2)} onNext={s.strategy ? () => goto(4) : buildStrategyAndGo} nextLabel={s.strategy ? 'Ir a imagen →' : 'Crear estrategia →'} />}
                 {step === 4 && <StepImagen s={s} costs={costs} setFormat={(f: Fmt) => patch({ format: f })} setBrief={(b: string) => patch({ brief: b })} onGen={(q?: 'standard' | 'premium') => withConfirm(costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm(costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => patch({ selectedImage: v })} onDownload={(v: ImageVariant) => downloadImage(v.url, `creativo-${v.key}`)} onBack={() => goto(3)} onNext={() => goto(5)} />}
                 {step === 5 && <StepVideo s={s} costs={costs} onGen={(d: '5' | '10') => withConfirm(d === '10' ? costs.video10 : costs.video5, `Generar video ${d}s`, () => genVideo(d))} onUGC={() => withConfirm(costs.ugc_video_10 ?? 10, 'Generar UGC (persona IA)', genUGC)} onBack={() => goto(4)} onNext={() => goto(6)} />}
                 {step === 6 && <StepCopy s={s} costs={costs} onGen={() => withConfirm(costs.copy, 'Generar copy', genCopy)} onPick={(c: CopyVariant) => patch({ selectedCopy: c })} onBack={() => goto(5)} onNext={() => { saveToHistory(); goto(7); }} />}
@@ -443,7 +445,7 @@ function Header({ credits, view, setView, onNew }: { credits: number; view: stri
 }
 
 // ── Step rail ─────────────────────────────────────────────────────────────────
-function StepRail({ step }: { step: number }) {
+function StepRail({ step, maxStep, goto }: { step: number; maxStep: number; goto: (n: number) => void }) {
   return (
     <aside style={{ width: 210, borderRight: `1px solid ${C.border}`, padding: '28px 18px', display: 'flex', flexDirection: 'column', gap: 4 }} className="studio-rail">
       <div style={{ height: 4, background: C.surface2, borderRadius: 4, marginBottom: 20, overflow: 'hidden' }}>
@@ -451,11 +453,14 @@ function StepRail({ step }: { step: number }) {
       </div>
       {STEPS.map((label, i) => {
         const n = i + 1, active = n === step, done = n < step;
+        const reachable = n <= maxStep; // podés saltar a cualquier paso ya visitado, sin perder nada
         return (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, background: active ? C.accentDim : 'transparent' }}>
+          <button key={label} onClick={() => reachable && goto(n)} disabled={!reachable}
+            title={reachable ? `Ir a ${label}` : 'Completá los pasos anteriores'}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, border: 'none', textAlign: 'left', width: '100%', cursor: reachable ? 'pointer' : 'default', background: active ? C.accentDim : 'transparent' }}>
             <div style={{ width: 24, height: 24, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0, background: done ? C.gradGreen : active ? C.grad : C.surface2, color: done || active ? '#fff' : C.textMuted }}>{done ? '✓' : n}</div>
-            <span style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? C.text : done ? C.textMuted : C.textDim }}>{label}</span>
-          </div>
+            <span style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? C.text : reachable ? C.textMuted : C.textDim }}>{label}</span>
+          </button>
         );
       })}
     </aside>
@@ -533,7 +538,7 @@ function StepObjetivo({ s, setObjective, onBack, onNext }: any) {
 }
 
 // ── PASO 3: Estilo ────────────────────────────────────────────────────────────
-function StepEstilo({ s, setStyle, onBack, onNext }: any) {
+function StepEstilo({ s, setStyle, onBack, onNext, nextLabel }: any) {
   return (
     <StepShell title="Elegí un estilo visual" subtitle="Con “Auto”, la IA decide el mejor estilo según tu producto y objetivo.">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 10 }}>
@@ -546,9 +551,26 @@ function StepEstilo({ s, setStyle, onBack, onNext }: any) {
           );
         })}
       </div>
-      <NavRow onBack={onBack} onNext={onNext} nextLabel="Crear estrategia →" />
+      <NavRow onBack={onBack} onNext={onNext} nextLabel={nextLabel ?? 'Crear estrategia →'} />
     </StepShell>
   );
+}
+
+// Recomienda comandos según el producto/objetivo/estilo elegidos (heurística, sin IA/costo).
+function recommendCommands(s: any): string[] {
+  const cat = (s.product?.category || '').toLowerCase();
+  const txt = `${cat} ${(s.product?.description || '')} ${(s.product?.name || '')}`.toLowerCase();
+  const obj = String(s.objective || '');
+  const style = String(s.strategy?.chosenStyle || s.style || '');
+  const cmds = new Set<string>(['/product', '/ad', '/studio']);
+  if (/food|snack|comida|papa|chip|gastro|bebida|drink|dulce|golosina|helado|caf[eé]|pizza|hamburg|galle/.test(txt)) ['/appetite', '/delicious', '/fresh', '/closeup'].forEach(c => cmds.add(c));
+  if (/vender|promocionar/.test(obj)) ['/high-conversion', '/scroll-stopping'].forEach(c => cmds.add(c));
+  if (/oferta/.test(obj) || style === 'oferta') ['/offer', '/discount', '/urgency'].forEach(c => cmds.add(c));
+  if (/premium|elegante|luxury/.test(style)) ['/premium', '/dramatic', '/luxury'].forEach(c => cmds.add(c));
+  if (/social|redes/.test(style) || obj === 'redes') ['/viral', '/scroll-stopping'].forEach(c => cmds.add(c));
+  if (/tecnolog|tech/.test(style + txt)) ['/tech-lover', '/cinematic'].forEach(c => cmds.add(c));
+  cmds.add('/hyperreal'); cmds.add('/white');
+  return [...cmds].slice(0, 9);
 }
 
 // ── PASO 4: Imagen ────────────────────────────────────────────────────────────
@@ -563,11 +585,17 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
         <label style={{ fontSize: 12, color: C.textMuted, display: 'block', marginBottom: 6 }}>¿Cómo querés la imagen? <span style={{ color: C.textDim }}>(texto libre o comandos <b style={{ color: C.accent }}>/</b>)</span></label>
         <input value={s.brief ?? ''} onChange={e => setBrief(e.target.value)} placeholder="Ej: /product /ad /appetite /studio /white  —  o: 'tipo catálogo para marketplace'"
           style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '11px 13px', color: C.text, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
-          {['/product', '/ad', '/hero', '/appetite', '/studio', '/premium', '/white', '/closeup', '/hyperreal', '/scroll-stopping'].map(cmd => (
-            <button key={cmd} type="button" onClick={() => setBrief(((s.brief ?? '').trim() + ' ' + cmd).trim())}
-              style={{ fontSize: 10.5, fontFamily: "'DM Mono',monospace", color: C.textMuted, background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>{cmd}</button>
-          ))}
+        <div style={{ marginTop: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, color: C.textMuted }}>✨ Recomendados para tu producto:</span>
+            <button type="button" onClick={() => setBrief(recommendCommands(s).join(' '))} style={{ fontSize: 11, fontWeight: 700, color: C.accent, background: C.accentDim, border: `1px solid ${C.accent}55`, borderRadius: 7, padding: '3px 10px', cursor: 'pointer' }}>Aplicar recomendados</button>
+          </div>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {recommendCommands(s).map(cmd => (
+              <button key={cmd} type="button" onClick={() => setBrief(((s.brief ?? '').trim() + ' ' + cmd).trim())}
+                style={{ fontSize: 10.5, fontFamily: "'DM Mono',monospace", color: C.accent, background: C.accentDim, border: `1px solid ${C.accent}44`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>{cmd}</button>
+            ))}
+          </div>
         </div>
       </div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>

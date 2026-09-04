@@ -336,6 +336,10 @@ JSON: [ { "key": "conversion", "title": "", "body": "", "cta": "", "description"
     try {
       const m = dataUrl.match(/^data:(.+?);base64,(.*)$/);
       if (!m) return dataUrl; // ya es URL
+      // Sin storage en la nube: devolvemos el data URL directo. Así la imagen NO depende
+      // del disco efímero (que se borra al redeployar) — persiste en la respuesta y en la DB,
+      // se ve siempre y se descarga bien. (Con R2/S3 configurado, se sube y se usa la URL.)
+      if (!this.storage.cloud) return dataUrl;
       const buffer = Buffer.from(m[2], 'base64');
       const mime = m[1];
       const ext = mime.includes('png') ? 'png' : mime.includes('mp4') ? 'mp4' : (mime.includes('mpeg') || mime.includes('mp3')) ? 'mp3' : (mime.includes('wav') ? 'wav' : 'jpg');
