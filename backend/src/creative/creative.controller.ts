@@ -25,6 +25,14 @@ export class CreativeController {
   private async billed<T>(req: any, opts: {
     operation: CreditOperation; amount: number; provider: string; model: string; seconds?: number;
   }, fn: () => Promise<T>): Promise<{ result: T; credits: number; creditsUsed: number }> {
+    // 🔒 Candado duro de gasto: si el gasto real de IA del mes superó el tope, se bloquea.
+    const cap = Number(process.env.MAX_AI_SPEND_MONTH_USD ?? 15);
+    if (cap > 0) {
+      const spent = await this.cost.monthlySpendUsd();
+      if (spent >= cap) {
+        throw new ForbiddenException(`Tope de gasto de IA del mes alcanzado ($${spent.toFixed(2)} de $${cap}). Subí el límite (MAX_AI_SPEND_MONTH_USD) para seguir generando.`);
+      }
+    }
     const idem = req.headers['idempotency-key'] as string | undefined;
     const { txId } = await this.credits.reserve({
       userId: req.user.id, role: req.user.role, amount: opts.amount,

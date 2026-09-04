@@ -28,6 +28,16 @@ export class CostTrackingService {
   }
 
   // Métricas para el ADMIN cost dashboard
+  // Gasto real de IA del mes en USD (para el tope duro que bloquea generación).
+  async monthlySpendUsd(): Promise<number> {
+    try {
+      const { rows } = await this.db.query(
+        `SELECT COALESCE(SUM(estimated_provider_cost_usd),0)::float AS c
+         FROM ai_generations WHERE created_at >= date_trunc('month', now())`);
+      return rows[0]?.c ?? 0;
+    } catch { return 0; }
+  }
+
   async adminMetrics() {
     const { rows } = await this.db.query(`
       SELECT
