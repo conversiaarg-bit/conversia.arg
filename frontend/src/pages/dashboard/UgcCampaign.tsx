@@ -282,7 +282,7 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
       {/* Canvas de nodos + Copiloto (siempre visible) */}
       <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }} className="canvas-copilot">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <CampaignCanvas plan={viewPlan} runs={runs} running={running} totalCost={totalCost} productImage={imageBase64}
+          <CampaignCanvas plan={viewPlan} runs={runs} running={running} totalCost={totalCost} productImage={imageBase64} productName={name}
             onRunAll={plan ? runAll : () => pushMsg('copilot', 'Primero contame qué producto querés promocionar (escribilo en el chat) y armo los nodos por vos.')}
             onAddScene={addScene} onDeleteScene={deleteScene} finalVideoUrl={finalVideoUrl} assembling={assembling} onAssemble={assembleFinal} onCancel={cancelRun} />
         </div>
