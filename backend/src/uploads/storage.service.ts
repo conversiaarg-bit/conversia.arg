@@ -73,7 +73,12 @@ export class StorageService implements OnModuleInit {
     // Disk fallback
     const filePath = join(this.uploadsDir, filename);
     writeFileSync(filePath, buffer);
-    const baseUrl = process.env.BACKEND_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
+    // La URL debe ser pública para que el navegador la cargue: si no hay BACKEND_URL,
+    // en producción usamos el dominio del backend (localhost solo sirve en dev).
+    const baseUrl = process.env.BACKEND_URL
+      ?? (process.env.NODE_ENV === 'production'
+        ? 'https://conversiaarg-production.up.railway.app'
+        : `http://localhost:${process.env.PORT ?? 3000}`);
     return {
       id, filename,
       url: `${baseUrl}/uploads/${filename}`,

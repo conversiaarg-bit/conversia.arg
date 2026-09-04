@@ -107,7 +107,7 @@ export class GenerativeService {
     this.logger.log(`[OpenAI] gpt-image-1: "${prompt.slice(0, 60)}..." ${size[format]}`);
 
     const res = await axios.post('https://api.openai.com/v1/images/generations', {
-      model: 'gpt-image-1', prompt, n: 1, size: size[format], quality: 'medium',
+      model: 'gpt-image-1', prompt, n: 1, size: size[format], quality: 'low',
     }, {
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       timeout: 120_000,

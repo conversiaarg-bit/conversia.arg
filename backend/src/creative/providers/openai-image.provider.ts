@@ -24,7 +24,8 @@ export class OpenAIImageProvider implements ImageProvider {
   async generate(input: ImageGenInput): Promise<ImageResult> {
     const model = PROVIDERS.openaiImageModel;
     const size = OpenAIImageProvider.SIZE[input.format];
-    const quality = input.quality === 'premium' ? 'high' : 'medium';
+    // 'low' por defecto (previews baratas ~$0.016) — 'high' solo en premium.
+    const quality = input.quality === 'premium' ? 'high' : 'low';
     const headers = { Authorization: `Bearer ${this.key()}` };
 
     // Con foto de referencia → images/edits (preserva packaging/logo/forma o el avatar)

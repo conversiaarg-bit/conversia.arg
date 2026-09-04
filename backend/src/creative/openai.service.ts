@@ -108,7 +108,7 @@ export class OpenaiService {
   async generateImage(prompt: string, format: Fmt = '9:16'): Promise<string> {
     this.logger.log(`[OpenAI] gpt-image-1 ${OpenaiService.SIZE[format]}: "${prompt.slice(0, 50)}..."`);
     const res = await axios.post('https://api.openai.com/v1/images/generations', {
-      model: 'gpt-image-1', prompt, n: 1, size: OpenaiService.SIZE[format], quality: 'medium',
+      model: 'gpt-image-1', prompt, n: 1, size: OpenaiService.SIZE[format], quality: 'low',
     }, {
       headers: { Authorization: `Bearer ${this.key()}`, 'Content-Type': 'application/json' },
       timeout: 120_000,
