@@ -215,7 +215,7 @@ export default function AICreativeStudio() {
       ) : view === 'campaign' ? (
         <UgcCampaign costs={costs} credits={credits} setCredits={setCredits} />
       ) : view === 'history' ? (
-        <History />
+        <History onUse={(url: string) => { patch({ images: [url], imageBase64: url, variants: [], selectedImage: undefined }); setMaxStep(1); setStep(1); setView('studio'); }} />
       ) : (
         <div style={{ display: 'flex', gap: 0, minHeight: 'calc(100vh - 64px)' }}>
           <StepRail step={step} maxStep={maxStep} goto={goto} />
@@ -778,7 +778,7 @@ function StepResultado({ s, onRegenImage, onRegenVideo, onRegenCopy, onCampaign,
 }
 
 // ── Historial ─────────────────────────────────────────────────────────────────
-function History() {
+function History({ onUse }: { onUse: (url: string) => void }) {
   const [items, setItems] = useState<any[] | null>(null);
   const [projects, setProjects] = useState<any[]>([]);
   const [filter, setFilter] = useState<'image' | 'video' | 'template' | 'fav'>('image');
@@ -844,7 +844,8 @@ function History() {
               <div style={{ padding: 12 }}>
                 <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</div>
                 <div style={{ fontSize: 11, color: C.textMuted, margin: '2px 0 8px' }}>{new Date(it.created_at).toLocaleDateString()} · {it.credits_used ?? 0} créditos</div>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {it.output_url && !it.video_url && <Btn small onClick={() => onUse(it.output_url)} title="Usar esta imagen como referencia para un creativo nuevo">♻️ Usar</Btn>}
                   {it.video_url && <a href={it.video_url} download target="_blank" rel="noreferrer" style={{ ...aBtn, padding: '6px 10px', fontSize: 12 }}>⬇ Video</a>}
                   {it.output_url && !it.video_url && <a href={it.output_url} download target="_blank" rel="noreferrer" style={{ ...aBtn, padding: '6px 10px', fontSize: 12 }}>⬇</a>}
                   <Btn small ghost onClick={() => del(it.id)}>🗑️</Btn>
