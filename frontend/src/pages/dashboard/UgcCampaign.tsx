@@ -17,6 +17,11 @@ const SKELETON: UgcScene[] = [
   { key: 'cta', title: 'CTA', seconds: 8, role: '', imagePrompt: '', videoPrompt: '', script: '' },
 ];
 
+// Cache en memoria: mantiene la campaña (nodos, imágenes, config) al navegar y volver.
+// No se borra al cambiar de sección; solo se pierde al recargar la página (las imágenes
+// igual quedan en "Mis creativos"). Vive fuera del componente para sobrevivir el re-montaje.
+const ugcCache: { s?: any } = {};
+
 // Campaña UGC por "nodos": el agente planifica 4 escenas y las genera con IA (Seedance).
 export default function UgcCampaign({ costs, credits, setCredits }: { costs: Record<string, number>; credits: number; setCredits: (n: number) => void }) {
   const [name, setName] = useState('');
@@ -127,6 +132,29 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
   const doneCount = Object.values(runs).filter(r => r.status === 'done').length;
   const [saved, setSaved] = useState(false);
   const viewPlan = plan ?? { creator: 'Tu creador IA', scenes: SKELETON };
+
+  // Mantener la campaña al navegar: restaurar al montar + guardar en cada cambio (en memoria).
+  const restored = useRef(false);
+  useEffect(() => {
+    const c = ugcCache.s;
+    if (c && !restored.current) {
+      if (c.plan) setPlan(c.plan);
+      if (c.runs) setRuns(c.runs);
+      if (c.name) setName(c.name);
+      if (c.cmd) setCmd(c.cmd);
+      if (c.avatar) setAvatar(c.avatar);
+      if (c.hd) setHd(c.hd);
+      if (c.selectedAvatar) setSelectedAvatar(c.selectedAvatar);
+      if (c.imageBase64) setImageBase64(c.imageBase64);
+      if (Array.isArray(c.messages) && c.messages.length > 1) setMessages(c.messages);
+    }
+    restored.current = true;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const firstSave = useRef(true);
+  useEffect(() => {
+    if (firstSave.current) { firstSave.current = false; return; } // no pisar el cache en el montaje
+    ugcCache.s = { plan, runs, name, cmd, avatar, hd, selectedAvatar, imageBase64, messages };
+  }, [plan, runs, name, cmd, avatar, hd, selectedAvatar, imageBase64, messages]);
 
   // Comandos recomendados según el producto (heurística, sin costo)
   const recCmds = (() => {
