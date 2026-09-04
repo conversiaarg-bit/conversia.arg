@@ -133,13 +133,13 @@ export default function AICreativeStudio() {
     goto(4);
   });
 
-  const genImages = () => run('images', async () => {
-    const r = await creativeApi.images({ product: s.product, objective: s.objective, style: s.strategy?.chosenStyle || s.style, format: s.format, referenceImage: s.imageBase64 });
+  const genImages = (quality?: 'standard' | 'premium') => run('images', async () => {
+    const r = await creativeApi.images({ product: s.product, objective: s.objective, style: s.strategy?.chosenStyle || s.style, format: s.format, quality, referenceImage: s.imageBase64 });
     patch({ variants: r.variants }); setCredits(r.credits);
   });
 
-  const regenImage = (angleKey: string) => run('image', async () => {
-    const r = await creativeApi.image({ product: s.product, objective: s.objective, style: s.strategy?.chosenStyle || s.style, format: s.format, angleKey, referenceImage: s.imageBase64 });
+  const regenImage = (angleKey: string, quality?: 'standard' | 'premium') => run('image', async () => {
+    const r = await creativeApi.image({ product: s.product, objective: s.objective, style: s.strategy?.chosenStyle || s.style, format: s.format, angleKey, quality, referenceImage: s.imageBase64 });
     setCredits(r.credits);
     patch({ variants: s.variants.map(v => v.key === angleKey ? r.variant : v) });
   });
@@ -202,7 +202,7 @@ export default function AICreativeStudio() {
                 {step === 1 && <StepProducto s={s} patch={patch} patchProduct={patchProduct} onAnalyze={analyze} onNext={() => goto(2)} onUpload={async (f: File) => patch({ imageBase64: await toBase64(f) })} />}
                 {step === 2 && <StepObjetivo s={s} setObjective={(o: string) => patch({ objective: o })} onBack={() => goto(1)} onNext={() => goto(3)} />}
                 {step === 3 && <StepEstilo s={s} setStyle={(st: string) => patch({ style: st })} onBack={() => goto(2)} onNext={buildStrategyAndGo} />}
-                {step === 4 && <StepImagen s={s} costs={costs} setFormat={(f: Fmt) => patch({ format: f })} onGen={() => withConfirm(costs.imageVariantsSet, 'Generar 3 imágenes', genImages)} onRegen={(k: string) => withConfirm(costs.imageRegen, 'Regenerar imagen', () => regenImage(k))} onPick={(v: ImageVariant) => patch({ selectedImage: v })} onBack={() => goto(3)} onNext={() => goto(5)} />}
+                {step === 4 && <StepImagen s={s} costs={costs} setFormat={(f: Fmt) => patch({ format: f })} onGen={(q?: 'standard' | 'premium') => withConfirm(costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm(costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => patch({ selectedImage: v })} onBack={() => goto(3)} onNext={() => goto(5)} />}
                 {step === 5 && <StepVideo s={s} costs={costs} onGen={(d: '5' | '10') => withConfirm(d === '10' ? costs.video10 : costs.video5, `Generar video ${d}s`, () => genVideo(d))} onUGC={() => withConfirm(costs.ugc_video_10 ?? 10, 'Generar UGC (persona IA)', genUGC)} onBack={() => goto(4)} onNext={() => goto(6)} />}
                 {step === 6 && <StepCopy s={s} costs={costs} onGen={() => withConfirm(costs.copy, 'Generar copy', genCopy)} onPick={(c: CopyVariant) => patch({ selectedCopy: c })} onBack={() => goto(5)} onNext={() => { saveToHistory(); goto(7); }} />}
                 {step === 7 && <StepResultado s={s} onRegenImage={() => goto(4)} onRegenVideo={() => goto(5)} onRegenCopy={genCopy} onCampaign={() => nav('/dashboard/new-campaign')} onNew={reset} />}
@@ -516,9 +516,11 @@ function StepEstilo({ s, setStyle, onBack, onNext }: any) {
 // ── PASO 4: Imagen ────────────────────────────────────────────────────────────
 function StepImagen({ s, setFormat, onGen, onRegen, onPick, onBack, onNext }: any) {
   const has = s.variants.length > 0;
+  const [hd, setHd] = useState(false);
+  const q = hd ? 'premium' : undefined;
   return (
     <StepShell title="Generá la imagen" subtitle={s.strategy?.concept ? `Concepto: ${s.strategy.concept}` : 'La IA crea 3 variantes; elegí la que más te guste.'}>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         {FORMATS.map(f => (
           <button key={f.key} onClick={() => setFormat(f.key)} style={{ padding: '9px 14px', borderRadius: 10, cursor: 'pointer', background: s.format === f.key ? C.accentDim : C.surface, border: `1.5px solid ${s.format === f.key ? C.accent : C.border}`, color: C.text, fontSize: 13 }}>
             <b>{f.label}</b> <span style={{ color: C.textMuted, fontSize: 11 }}>· {f.sub}</span>
@@ -526,10 +528,20 @@ function StepImagen({ s, setFormat, onGen, onRegen, onPick, onBack, onNext }: an
         ))}
       </div>
 
+      {/* Calidad: Económica (barata) por defecto; HD cuesta más */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: C.textMuted }}>Calidad:</span>
+        {[{ v: false, t: 'Económica', d: 'más barata' }, { v: true, t: 'HD', d: 'mejor · cuesta más' }].map(o => (
+          <button key={o.t} onClick={() => setHd(o.v)} style={{ padding: '7px 13px', borderRadius: 9, cursor: 'pointer', background: hd === o.v ? C.accentDim : C.surface, border: `1.5px solid ${hd === o.v ? C.accent : C.border}`, color: C.text, fontSize: 12.5 }}>
+            <b>{o.t}</b> <span style={{ color: C.textMuted, fontSize: 10.5 }}>· {o.d}</span>
+          </button>
+        ))}
+      </div>
+
       {!has ? (
         <div style={{ display: 'grid', placeItems: 'center', padding: '48px 0', border: `1.5px dashed ${C.border}`, borderRadius: 16, background: C.surface }}>
           <div style={{ fontSize: 34 }}>🎨</div>
-          <Btn style={{ marginTop: 16 }} onClick={onGen}>Generar 3 variantes</Btn>
+          <Btn style={{ marginTop: 16 }} onClick={() => onGen(q)}>Generar 3 variantes</Btn>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))', gap: 14 }}>
@@ -545,7 +557,7 @@ function StepImagen({ s, setFormat, onGen, onRegen, onPick, onBack, onNext }: an
                   <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8 }}>{v.description}</div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <Btn small onClick={() => onPick(v)} ghost={!sel} style={{ flex: 1 }}>{sel ? '✓ Elegida' : 'Usar esta'}</Btn>
-                    <Btn small ghost onClick={() => onRegen(v.key)} title="Regenerar">🔄</Btn>
+                    <Btn small ghost onClick={() => onRegen(v.key, q)} title="Regenerar">🔄</Btn>
                   </div>
                 </div>
               </div>
