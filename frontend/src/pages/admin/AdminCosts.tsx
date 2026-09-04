@@ -171,6 +171,22 @@ export default function AdminCosts() {
           (m.byModel as any[]).map((r, i) => <Row key={i} cells={[r.provider, r.model, `${r.n}`, money(+r.cost)]} />)}
       </div>
 
+      {/* Gasto real de la IA (la key de OpenAI/Seedance) */}
+      <h3 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 17, margin: '0 0 4px' }}>Gasto real de la IA</h3>
+      <p style={{ color: C.textMuted, fontSize: 13, margin: '0 0 12px' }}>Lo que se consume de las API keys (OpenAI / Seedance), estimado por operación. Acumulado: <b style={{ color: C.amber }}>{money(aiCost)}</b> · este mes: <b style={{ color: C.amber }}>{money(aiMonth)}</b></p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 16, marginBottom: 26 }}>
+        <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+          <Row head cells={['Día', 'Generaciones', 'Gasto IA']} />
+          {(m.byDay ?? []).length === 0 ? <div style={{ padding: 16, color: C.textMuted, fontSize: 13 }}>Sin gasto todavía.</div> :
+            (m.byDay as any[]).map((r, i) => <Row key={i} cells={[r.day, `${r.n}`, money(+r.cost)]} />)}
+        </div>
+        <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+          <Row head cells={['Operación', 'Usos', 'Gasto IA']} />
+          {(m.byOperation ?? []).length === 0 ? <div style={{ padding: 16, color: C.textMuted, fontSize: 13 }}>Sin gasto todavía.</div> :
+            (m.byOperation as any[]).map((r, i) => <Row key={i} cells={[r.operation, `${r.n}`, money(+r.cost)]} />)}
+        </div>
+      </div>
+
       {/* Gasto real del software */}
       <h3 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 17, margin: '0 0 12px' }}>Gasto real del software (este mes)</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 16, marginBottom: 26 }}>

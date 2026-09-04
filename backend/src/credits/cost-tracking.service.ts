@@ -63,6 +63,26 @@ export class CostTrackingService {
       extra = { ...extra, ...rev[0], ...revM[0] };
     } catch { /* ignore */ }
 
-    return { ...rows[0], ...extra, byModel };
+    // Gasto real de la IA por día (últimos 30) y por operación — para la tabla del panel
+    let byDay: any[] = [];
+    let byOperation: any[] = [];
+    try {
+      byDay = (await this.db.query(
+        `SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day,
+                COUNT(*)::int AS n,
+                COALESCE(SUM(estimated_provider_cost_usd),0)::float AS cost
+         FROM ai_generations
+         WHERE created_at >= now() - interval '30 days'
+         GROUP BY 1 ORDER BY 1 DESC`)).rows;
+    } catch { /* ignore */ }
+    try {
+      byOperation = (await this.db.query(
+        `SELECT operation,
+                COUNT(*)::int AS n,
+                COALESCE(SUM(estimated_provider_cost_usd),0)::float AS cost
+         FROM ai_generations GROUP BY operation ORDER BY cost DESC`)).rows;
+    } catch { /* ignore */ }
+
+    return { ...rows[0], ...extra, byModel, byDay, byOperation };
   }
 }
