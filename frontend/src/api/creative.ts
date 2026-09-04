@@ -26,10 +26,10 @@ export const creativeApi = {
   strategy: (body: { product: ProductInfo; objective: string; style: string }) =>
     D<Strategy>(api.post('/creative/strategy', body, { timeout: 60_000 })),
 
-  images: (body: { product: ProductInfo; objective: string; style: string; format: Fmt; quality?: 'standard' | 'premium'; referenceImage?: string }) =>
+  images: (body: { product: ProductInfo; objective: string; style: string; format: Fmt; quality?: 'standard' | 'premium'; referenceImage?: string; referenceImages?: string[]; brief?: string }) =>
     D<{ variants: ImageVariant[]; credits: number; creditsUsed: number }>(api.post('/creative/images', body, { timeout: 180_000, ...idem() })),
 
-  image: (body: { product: ProductInfo; objective: string; style: string; format: Fmt; angleKey?: string; quality?: 'standard' | 'premium'; referenceImage?: string }) =>
+  image: (body: { product: ProductInfo; objective: string; style: string; format: Fmt; angleKey?: string; quality?: 'standard' | 'premium'; referenceImage?: string; referenceImages?: string[]; brief?: string }) =>
     D<{ variant: ImageVariant; credits: number; creditsUsed: number }>(api.post('/creative/image', body, { timeout: 120_000, ...idem() })),
 
   video: (body: { imageBase64: string; product: ProductInfo; style: string; duration: '5' | '10' }) =>

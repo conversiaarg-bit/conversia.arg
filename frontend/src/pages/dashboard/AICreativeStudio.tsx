@@ -61,7 +61,9 @@ function friendly(e: any): string {
 
 // ── Estado del studio ────────────────────────────────────────────────────────
 interface StudioState {
-  imageBase64?: string;         // foto subida (data URL)
+  imageBase64?: string;         // primera foto (compatibilidad con analyze/video/ugc)
+  images?: string[];            // varias fotos del producto (data URLs)
+  brief?: string;               // pedido en texto ("tipo catálogo para marketplace")
   product: ProductInfo;
   objective: string;
   style: string;
@@ -74,7 +76,16 @@ interface StudioState {
   selectedCopy?: CopyVariant;
   creditsUsed: number;
 }
-const EMPTY: StudioState = { product: { name: '' }, objective: 'vender', style: 'auto', format: '9:16', variants: [], copyVariants: [], creditsUsed: 0 };
+const EMPTY: StudioState = { product: { name: '' }, objective: 'vender', style: 'auto', format: '9:16', images: [], variants: [], copyVariants: [], creditsUsed: 0 };
+
+// Descargar una imagen (URL del backend) como PNG
+async function downloadImage(url: string, name: string) {
+  try {
+    const r = await fetch(url); const b = await r.blob();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name.endsWith('.png') ? name : `${name}.png`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+  } catch { window.open(url, '_blank'); }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function AICreativeStudio() {
@@ -84,6 +95,21 @@ export default function AICreativeStudio() {
   const [s, setS] = useState<StudioState>(EMPTY);
   const patch = (p: Partial<StudioState>) => setS(prev => ({ ...prev, ...p }));
   const patchProduct = (p: Partial<ProductInfo>) => setS(prev => ({ ...prev, product: { ...prev.product, ...p } }));
+
+  // Varias fotos del producto
+  const addImages = async (files: FileList | File[]) => {
+    const b64s = await Promise.all(Array.from(files).map(toBase64));
+    setS(prev => { const images = [...(prev.images ?? []), ...b64s]; return { ...prev, images, imageBase64: images[0] }; });
+  };
+  const removeImage = (i: number) => setS(prev => { const images = (prev.images ?? []).filter((_, idx) => idx !== i); return { ...prev, images, imageBase64: images[0] }; });
+
+  // Persistencia: restaurar al volver + guardar (sin las fotos base64, pesadas)
+  useEffect(() => {
+    try { const raw = localStorage.getItem('cv_studio'); if (raw) { const d = JSON.parse(raw); if (d.s) setS(d.s); if (d.view) setView(d.view); if (d.step) setStep(d.step); } } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('cv_studio', JSON.stringify({ s: { ...s, imageBase64: undefined, images: undefined }, view, step })); } catch { /* quota */ }
+  }, [s, view, step]);
 
   const [busy, setBusy] = useState<string | null>(null);       // clave de LOADING_MSGS
   const [err, setErr] = useState<string | null>(null);
@@ -134,12 +160,12 @@ export default function AICreativeStudio() {
   });
 
   const genImages = (quality?: 'standard' | 'premium') => run('images', async () => {
-    const r = await creativeApi.images({ product: s.product, objective: s.objective, style: s.strategy?.chosenStyle || s.style, format: s.format, quality, referenceImage: s.imageBase64 });
+    const r = await creativeApi.images({ product: s.product, objective: s.objective, style: s.strategy?.chosenStyle || s.style, format: s.format, quality, referenceImage: s.imageBase64, referenceImages: s.images, brief: s.brief });
     patch({ variants: r.variants }); setCredits(r.credits);
   });
 
   const regenImage = (angleKey: string, quality?: 'standard' | 'premium') => run('image', async () => {
-    const r = await creativeApi.image({ product: s.product, objective: s.objective, style: s.strategy?.chosenStyle || s.style, format: s.format, angleKey, quality, referenceImage: s.imageBase64 });
+    const r = await creativeApi.image({ product: s.product, objective: s.objective, style: s.strategy?.chosenStyle || s.style, format: s.format, angleKey, quality, referenceImage: s.imageBase64, referenceImages: s.images, brief: s.brief });
     setCredits(r.credits);
     patch({ variants: s.variants.map(v => v.key === angleKey ? r.variant : v) });
   });
@@ -199,10 +225,10 @@ export default function AICreativeStudio() {
 
             {!busy && (
               <>
-                {step === 1 && <StepProducto s={s} patch={patch} patchProduct={patchProduct} onAnalyze={analyze} onNext={() => goto(2)} onUpload={async (f: File) => patch({ imageBase64: await toBase64(f) })} />}
+                {step === 1 && <StepProducto s={s} patch={patch} patchProduct={patchProduct} onAnalyze={analyze} onNext={() => goto(2)} onAddImages={addImages} onRemoveImage={removeImage} />}
                 {step === 2 && <StepObjetivo s={s} setObjective={(o: string) => patch({ objective: o })} onBack={() => goto(1)} onNext={() => goto(3)} />}
                 {step === 3 && <StepEstilo s={s} setStyle={(st: string) => patch({ style: st })} onBack={() => goto(2)} onNext={buildStrategyAndGo} />}
-                {step === 4 && <StepImagen s={s} costs={costs} setFormat={(f: Fmt) => patch({ format: f })} onGen={(q?: 'standard' | 'premium') => withConfirm(costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm(costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => patch({ selectedImage: v })} onBack={() => goto(3)} onNext={() => goto(5)} />}
+                {step === 4 && <StepImagen s={s} costs={costs} setFormat={(f: Fmt) => patch({ format: f })} setBrief={(b: string) => patch({ brief: b })} onGen={(q?: 'standard' | 'premium') => withConfirm(costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm(costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => patch({ selectedImage: v })} onDownload={(v: ImageVariant) => downloadImage(v.url, `creativo-${v.key}`)} onBack={() => goto(3)} onNext={() => goto(5)} />}
                 {step === 5 && <StepVideo s={s} costs={costs} onGen={(d: '5' | '10') => withConfirm(d === '10' ? costs.video10 : costs.video5, `Generar video ${d}s`, () => genVideo(d))} onUGC={() => withConfirm(costs.ugc_video_10 ?? 10, 'Generar UGC (persona IA)', genUGC)} onBack={() => goto(4)} onNext={() => goto(6)} />}
                 {step === 6 && <StepCopy s={s} costs={costs} onGen={() => withConfirm(costs.copy, 'Generar copy', genCopy)} onPick={(c: CopyVariant) => patch({ selectedCopy: c })} onBack={() => goto(5)} onNext={() => { saveToHistory(); goto(7); }} />}
                 {step === 7 && <StepResultado s={s} onRegenImage={() => goto(4)} onRegenVideo={() => goto(5)} onRegenCopy={genCopy} onCampaign={() => nav('/dashboard/new-campaign')} onNew={reset} />}
@@ -436,21 +462,32 @@ function StepRail({ step }: { step: number }) {
 }
 
 // ── PASO 1: Producto ──────────────────────────────────────────────────────────
-function StepProducto({ s, patchProduct, onAnalyze, onNext, onUpload }: any) {
+function StepProducto({ s, patchProduct, onAnalyze, onNext, onAddImages, onRemoveImage }: any) {
   const fileRef = useRef<HTMLInputElement>(null);
   const p = s.product as ProductInfo;
-  const canNext = !!(p.name?.trim() || s.imageBase64);
+  const imgs: string[] = s.images ?? [];
+  const canNext = !!(p.name?.trim() || imgs.length);
   return (
-    <StepShell title="Contanos del producto" subtitle="Subí una foto y/o completá los datos. La IA puede analizar la imagen y completar lo que falte.">
+    <StepShell title="Contanos del producto" subtitle="Subí una o varias fotos y/o completá los datos. La IA genera en base a TODAS las fotos que subas.">
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,320px) 1fr', gap: 22 }} className="prod-grid">
         <div>
-          <div onClick={() => fileRef.current?.click()} style={{ aspectRatio: '3/4', borderRadius: 14, border: `1.5px dashed ${C.borderBright}`, background: C.surface, display: 'grid', placeItems: 'center', cursor: 'pointer', overflow: 'hidden' }}>
-            {s.imageBase64
-              ? <img src={s.imageBase64} alt="producto" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : <div style={{ textAlign: 'center', color: C.textMuted }}><div style={{ fontSize: 32 }}>📷</div><div style={{ fontSize: 13, marginTop: 8 }}>Subir foto del producto</div></div>}
-          </div>
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => e.target.files?.[0] && onUpload(e.target.files[0])} />
-          {s.imageBase64 && <Btn ghost small style={{ marginTop: 10, width: '100%' }} onClick={onAnalyze}>🧠 Analizar imagen con IA</Btn>}
+          {imgs.length === 0 ? (
+            <div onClick={() => fileRef.current?.click()} style={{ aspectRatio: '3/4', borderRadius: 14, border: `1.5px dashed ${C.borderBright}`, background: C.surface, display: 'grid', placeItems: 'center', cursor: 'pointer', overflow: 'hidden' }}>
+              <div style={{ textAlign: 'center', color: C.textMuted }}><div style={{ fontSize: 32 }}>📷</div><div style={{ fontSize: 13, marginTop: 8 }}>Subir foto(s) del producto</div><div style={{ fontSize: 11, marginTop: 4 }}>Podés subir varias</div></div>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+              {imgs.map((im, i) => (
+                <div key={i} style={{ position: 'relative', aspectRatio: '1', borderRadius: 10, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+                  <img src={im} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <button onClick={() => onRemoveImage(i)} title="Quitar" style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: 6, border: 'none', background: '#000a', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>×</button>
+                </div>
+              ))}
+              <button onClick={() => fileRef.current?.click()} style={{ aspectRatio: '1', borderRadius: 10, border: `1.5px dashed ${C.borderBright}`, background: C.surface, color: C.textMuted, cursor: 'pointer', fontSize: 22 }}>+</button>
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={e => { if (e.target.files?.length) onAddImages(e.target.files); e.currentTarget.value = ''; }} />
+          {imgs.length > 0 && <Btn ghost small style={{ marginTop: 10, width: '100%' }} onClick={onAnalyze}>🧠 Analizar con IA ({imgs.length} foto{imgs.length > 1 ? 's' : ''})</Btn>}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Field label="Nombre" value={p.name} onChange={v => patchProduct({ name: v })} placeholder="Ej: Zapatillas Nike Air Max" />
@@ -514,12 +551,18 @@ function StepEstilo({ s, setStyle, onBack, onNext }: any) {
 }
 
 // ── PASO 4: Imagen ────────────────────────────────────────────────────────────
-function StepImagen({ s, setFormat, onGen, onRegen, onPick, onBack, onNext }: any) {
+function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload, onBack, onNext }: any) {
   const has = s.variants.length > 0;
   const [hd, setHd] = useState(false);
   const q = hd ? 'premium' : undefined;
   return (
     <StepShell title="Generá la imagen" subtitle={s.strategy?.concept ? `Concepto: ${s.strategy.concept}` : 'La IA crea 3 variantes; elegí la que más te guste.'}>
+      {/* Brief: qué imagen querés */}
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ fontSize: 12, color: C.textMuted, display: 'block', marginBottom: 6 }}>¿Cómo querés la imagen? <span style={{ color: C.textDim }}>(opcional — la IA lo tiene en cuenta)</span></label>
+        <input value={s.brief ?? ''} onChange={e => setBrief(e.target.value)} placeholder="Ej: tipo catálogo para vender en marketplace, fondo blanco, mostrando los 8 productos"
+          style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '11px 13px', color: C.text, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+      </div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         {FORMATS.map(f => (
           <button key={f.key} onClick={() => setFormat(f.key)} style={{ padding: '9px 14px', borderRadius: 10, cursor: 'pointer', background: s.format === f.key ? C.accentDim : C.surface, border: `1.5px solid ${s.format === f.key ? C.accent : C.border}`, color: C.text, fontSize: 13 }}>
@@ -557,6 +600,7 @@ function StepImagen({ s, setFormat, onGen, onRegen, onPick, onBack, onNext }: an
                   <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8 }}>{v.description}</div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <Btn small onClick={() => onPick(v)} ghost={!sel} style={{ flex: 1 }}>{sel ? '✓ Elegida' : 'Usar esta'}</Btn>
+                    <Btn small ghost onClick={() => onDownload(v)} title="Descargar PNG">⬇</Btn>
                     <Btn small ghost onClick={() => onRegen(v.key, q)} title="Regenerar">🔄</Btn>
                   </div>
                 </div>

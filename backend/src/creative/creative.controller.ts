@@ -76,7 +76,7 @@ export class CreativeController {
   // PASO 4 — 3 variantes
   @Post('images') @HttpCode(HttpStatus.OK)
   @Throttle({ medium: { limit: 15, ttl: 60000 } })
-  async images(@Body() body: { product: ProductInfo; objective: string; style: string; format: Fmt; quality?: 'standard' | 'premium'; referenceImage?: string }, @Request() req: any) {
+  async images(@Body() body: { product: ProductInfo; objective: string; style: string; format: Fmt; quality?: 'standard' | 'premium'; referenceImage?: string; referenceImages?: string[]; brief?: string }, @Request() req: any) {
     const { remaining } = await this.assertFree(req, 'image');
     const op: CreditOperation = body.quality === 'premium' ? 'image_premium' : 'image_standard';
     const count = Math.min(3, remaining);
@@ -88,7 +88,7 @@ export class CreativeController {
 
   // Regenerar una variante
   @Post('image') @HttpCode(HttpStatus.OK)
-  async image(@Body() body: { product: ProductInfo; objective: string; style: string; format: Fmt; angleKey?: string; quality?: 'standard' | 'premium'; referenceImage?: string }, @Request() req: any) {
+  async image(@Body() body: { product: ProductInfo; objective: string; style: string; format: Fmt; angleKey?: string; quality?: 'standard' | 'premium'; referenceImage?: string; referenceImages?: string[]; brief?: string }, @Request() req: any) {
     await this.assertFree(req, 'image');
     const op: CreditOperation = body.quality === 'premium' ? 'image_premium' : 'image_standard';
     const { result, credits, creditsUsed } = await this.billed(req, { operation: op, amount: CREDIT_COSTS[op], provider: PROVIDERS.image, model: PROVIDERS.openaiImageModel },

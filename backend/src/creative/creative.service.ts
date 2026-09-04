@@ -99,15 +99,18 @@ Devolvé JSON: { "chosenStyle": string (una de las claves de estilo), "concept":
   // ── PASO 4: 3 variantes de imagen (GPT arma cada prompt visual → gpt-image) ──
   async generateImageVariants(input: {
     product: ProductInfo; objective: string; style: string; format: Fmt;
-    quality?: 'standard' | 'premium'; referenceImage?: string;
+    quality?: 'standard' | 'premium'; referenceImage?: string; referenceImages?: string[]; brief?: string;
   }, limit = 3): Promise<Array<{ key: string; label: string; description: string; prompt: string; url: string; model: string }>> {
     const styleDesc = STYLES[input.style] ?? STYLES.profesional;
     const objGuide = OBJECTIVES[input.objective] ?? OBJECTIVES.vender;
+    const briefLine = input.brief?.trim()
+      ? `\nEl usuario pidió EXPLÍCITAMENTE este tipo de imagen: "${input.brief.trim()}". Priorizá ese pedido en los 3 prompts (respetando el producto real de las fotos de referencia).`
+      : '';
 
     // 1 sola llamada GPT arma los 3 prompts visuales (barato)
     const prompts = await this.openai.chatJSON<Array<{ key: string; prompt: string }>>(
       'Sos experto en dirección de arte para Meta Ads. Escribís prompts visuales en inglés para un modelo de imágenes.',
-      `Producto: ${JSON.stringify(input.product)}. Objetivo: ${objGuide}. Estilo base: ${styleDesc}.
+      `Producto: ${JSON.stringify(input.product)}. Objetivo: ${objGuide}. Estilo base: ${styleDesc}.${briefLine}
 Escribí 3 prompts visuales EN INGLÉS, uno por ángulo (${VARIANT_ANGLES.map(v => v.key).join(', ')}). Cada prompt debe contemplar: composición, iluminación, fondo, posición del producto, colores, jerarquía visual, espacio para texto publicitario, sin watermarks, formato ad vertical.
 JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "..." }, { "key": "social", "prompt": "..." } ]`,
       700,
@@ -118,7 +121,7 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
     const out = await Promise.all(VARIANT_ANGLES.slice(0, limit).map(async angle => {
       const p = prompts.find(x => x.key === angle.key)?.prompt
         ?? `${input.product.name}, ${styleDesc}, ${angle.desc}, professional Meta Ads creative, photorealistic, no watermark`;
-      const r = await this.imageProvider.generate({ prompt: p, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage });
+      const r = await this.imageProvider.generate({ prompt: p, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages });
       const url = await this.persist(r.dataUrl, 'image');
       return { key: angle.key, label: angle.label, description: angle.desc, prompt: p, url, model: r.model };
     }));
@@ -126,15 +129,16 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
   }
 
   // Regenerar UNA sola imagen (para "no me gusta esta variante")
-  async generateSingleImage(input: { product: ProductInfo; objective: string; style: string; format: Fmt; angleKey?: string; quality?: 'standard' | 'premium'; referenceImage?: string }) {
+  async generateSingleImage(input: { product: ProductInfo; objective: string; style: string; format: Fmt; angleKey?: string; quality?: 'standard' | 'premium'; referenceImage?: string; referenceImages?: string[]; brief?: string }) {
     const styleDesc = STYLES[input.style] ?? STYLES.profesional;
     const angle = VARIANT_ANGLES.find(a => a.key === input.angleKey) ?? VARIANT_ANGLES[0];
+    const briefLine = input.brief?.trim() ? ` El usuario pidió: "${input.brief.trim()}" — priorizalo.` : '';
     const prompt = await this.openai.chat(
       'Sos experto en dirección de arte para Meta Ads. Escribís UN prompt visual en inglés.',
-      `Producto: ${JSON.stringify(input.product)}. Estilo: ${styleDesc}. Ángulo: ${angle.label} (${angle.desc}). Un prompt visual en inglés, con composición/iluminación/fondo/espacio para texto, sin watermark.`,
+      `Producto: ${JSON.stringify(input.product)}. Estilo: ${styleDesc}. Ángulo: ${angle.label} (${angle.desc}).${briefLine} Un prompt visual en inglés, con composición/iluminación/fondo/espacio para texto, sin watermark.`,
       250,
     );
-    const r = await this.imageProvider.generate({ prompt: prompt.trim() || `${input.product.name}, ${styleDesc}`, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage });
+    const r = await this.imageProvider.generate({ prompt: prompt.trim() || `${input.product.name}, ${styleDesc}`, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages });
     const url = await this.persist(r.dataUrl, 'image');
     return { key: angle.key, label: angle.label, description: angle.desc, prompt: prompt.trim(), url, model: r.model };
   }

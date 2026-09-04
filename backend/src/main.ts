@@ -34,8 +34,11 @@ async function bootstrap() {
   const port = config.get<number>('port', 3000);
   const env = config.get<string>('nodeEnv', 'development');
 
-  // ── Static files (uploaded media) ────────────────────────────────────────
-  app.useStaticAssets(uploadsDir, { prefix: '/uploads' });
+  // ── Static files (uploaded media) — CORS abierto para poder descargarlos ──
+  app.useStaticAssets(uploadsDir, {
+    prefix: '/uploads',
+    setHeaders: (res: any) => res.set('Access-Control-Allow-Origin', '*'),
+  });
 
   // ── Security ──────────────────────────────────────────────────────────────
   app.use(helmet());

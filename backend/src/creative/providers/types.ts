@@ -5,7 +5,8 @@ export interface ImageGenInput {
   prompt: string;
   format: Fmt;
   quality?: 'standard' | 'premium';
-  referenceImage?: string;   // base64/dataURL de la foto real del producto (preservación)
+  referenceImage?: string;      // base64/dataURL de la foto real del producto (preservación)
+  referenceImages?: string[];   // varias fotos del producto (gpt-image-1 las compone)
 }
 export interface ImageResult { dataUrl: string; model: string }
 export interface ImageProvider {

@@ -29,20 +29,25 @@ export class OpenAIImageProvider implements ImageProvider {
     const quality = input.quality === 'premium' ? 'medium' : 'low';
     const headers = { Authorization: `Bearer ${this.key()}` };
 
-    // Con foto de referencia → images/edits (preserva packaging/logo/forma o el avatar)
-    if (input.referenceImage) {
+    // Con foto(s) de referencia → images/edits (preserva packaging/logo/forma).
+    // gpt-image-1 acepta VARIAS imágenes (las compone). Máx 8 para no excedernos.
+    const refs = (input.referenceImages?.length ? input.referenceImages : (input.referenceImage ? [input.referenceImage] : [])).slice(0, 8);
+    if (refs.length) {
       try {
-        let ref = input.referenceImage;
-        if (/^https?:\/\//.test(ref)) {
-          const dl = await axios.get(ref, { responseType: 'arraybuffer', timeout: 30_000 });
-          ref = `data:image/png;base64,${Buffer.from(dl.data as ArrayBuffer).toString('base64')}`;
-        }
-        const b64 = ref.replace(/^data:image\/\w+;base64,/, '');
         const form = new FormData();
-        form.append('image', new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' }), 'product.png');
+        for (let i = 0; i < refs.length; i++) {
+          let ref = refs[i];
+          if (/^https?:\/\//.test(ref)) {
+            const dl = await axios.get(ref, { responseType: 'arraybuffer', timeout: 30_000 });
+            ref = `data:image/png;base64,${Buffer.from(dl.data as ArrayBuffer).toString('base64')}`;
+          }
+          const b64 = ref.replace(/^data:image\/\w+;base64,/, '');
+          form.append('image[]', new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' }), `product_${i}.png`);
+        }
         form.append('model', model);
         form.append('prompt', input.prompt);
         form.append('size', size);
+        form.append('quality', quality);
         form.append('n', '1');
         const res = await axios.post('https://api.openai.com/v1/images/edits', form, { headers, timeout: 120_000 });
         const out = res.data?.data?.[0]?.b64_json;
