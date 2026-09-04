@@ -21,8 +21,8 @@ export type CreditOperation = keyof typeof CREDIT_COSTS;
 // Precio de proveedor en USD (lista oficial). Ajustable por env a la factura real de cada proveedor.
 // Al generar con las keys, el costo REAL registrado = estos precios × uso real (segundos/cantidad).
 export const PROVIDER_COSTS_USD = {
-  image_standard: n(process.env.IMAGE_COST_USD, 0.034),        // OpenAI gpt-image (calidad estándar)
-  image_premium:  n(process.env.IMAGE_PREMIUM_COST_USD, 0.13), // OpenAI gpt-image (calidad premium)
+  image_standard: n(process.env.IMAGE_COST_USD, 0.018),        // gpt-image-1 'low' 9:16 (medido: ~408 tokens out)
+  image_premium:  n(process.env.IMAGE_PREMIUM_COST_USD, 0.063), // gpt-image-1 'medium' 9:16
   video_per_second: n(process.env.VIDEO_COST_PER_SECOND_USD, 0.062), // Seedance 1.5 Pro (fal.ai) 1080p
   copy: n(process.env.COPY_COST_USD, 0.0008),                 // OpenAI gpt-4o-mini (por copy)
   tts:  n(process.env.TTS_COST_USD, 0.012),                   // OpenAI gpt-4o-mini-tts (~30s de voz)
