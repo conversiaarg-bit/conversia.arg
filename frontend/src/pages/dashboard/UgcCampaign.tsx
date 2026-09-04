@@ -46,24 +46,27 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
   const [brief, setBrief] = useState('');
   const startCampaign = (b?: string) => { const v = b ?? name; if (v) setName(v); setBrief(v || 'Producto'); setAskDur(true); };
   const DURATIONS = [
-    { key: '20', label: '15–20 s', sub: 'Rápido y directo — ideal para Reels y TikTok', rec: true },
-    { key: '30', label: '25–30 s', sub: 'Espacio para mostrar el producto y contar más' },
-    { key: '40', label: '35–40 s', sub: 'Mini-historia completa con más detalle' },
+    { key: '5', label: '5 segundos', sub: 'El más corto y barato — ideal para Reels y TikTok', rec: true },
+    { key: '10', label: '10 segundos', sub: 'Un poco más de tiempo para mostrar el producto' },
+    { key: '15', label: '15 segundos', sub: 'Más detalle por escena' },
   ];
   const pickDuration = (d: { key: string; label: string }) => {
     setAskDur(false);
-    pushMsg('user', `Duración: ${d.label}`);
-    doPlan(brief);
+    pushMsg('user', `Duración: ${d.label} por escena`);
+    doPlan(brief, +d.key);
   };
 
-  const doPlan = async (overrideName?: string) => {
+  const doPlan = async (overrideName?: string, seconds?: number) => {
     const pName = (overrideName ?? brief ?? name) || 'Producto';
     setErr(null); setPlanning(true);
     pushMsg('copilot', 'Analizando el producto y planificando las escenas…');
     try {
       const p = await creativeApi.ugcPlan({ product: { name: pName }, creatorKey });
-      setPlan(p);
-      setRuns(Object.fromEntries(p.scenes.map(s => [s.key, { status: 'idle' as SceneStatus }])));
+      // Aplicamos la duración elegida a todas las escenas (5/10/15 s)
+      const secs = Math.min(15, Math.max(5, seconds ?? 10));
+      const scenes = p.scenes.map(s => ({ ...s, seconds: secs }));
+      setPlan({ ...p, scenes });
+      setRuns(Object.fromEntries(scenes.map(s => [s.key, { status: 'idle' as SceneStatus }])));
       pushMsg('copilot', `Listo. Armé una campaña con ${p.scenes.length} escenas (Gancho → Mensaje → Se construye → CTA), protagonizada por ${p.creator}. Cada escena es una imagen de la persona con el producto → video con Seedance.`);
       pushMsg('copilot', `▶ Listo para ejecutar ${p.scenes.length + 2} nodos. Apretá "Generar" cuando quieras.`);
     } catch { setErr('No se pudo planificar la campaña (¿IA configurada?).'); pushMsg('copilot', 'No pude planificar — falta configurar la IA (OpenAI).'); }
