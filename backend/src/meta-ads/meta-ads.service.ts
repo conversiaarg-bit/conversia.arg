@@ -335,9 +335,23 @@ export class MetaAdsService {
       })).data.access_token;
 
       const client = this.api(long);
-      const accounts = (await client.get('/me/adaccounts', { params: { fields: 'id,name,account_status', limit: 100 } })).data.data ?? [];
-      const pages = (await client.get('/me/accounts', { params: { fields: 'id,name', limit: 100 } })).data.data ?? [];
-      if (!accounts.length) return back('error', `&msg=${encodeURIComponent('Tu cuenta de Meta no tiene cuentas publicitarias accesibles.')}`);
+      let meName = '';
+      try { meName = (await client.get('/me', { params: { fields: 'name' } })).data.name; } catch { /* ignore */ }
+
+      let accounts: any[] = [];
+      try {
+        accounts = (await client.get('/me/adaccounts', { params: { fields: 'id,name,account_status', limit: 100 } })).data.data ?? [];
+      } catch (e: any) {
+        const gm = e?.response?.data?.error?.message ?? e.message;
+        this.logger.error(`Meta /me/adaccounts falló: ${gm}`);
+        return back('error', `&msg=${encodeURIComponent(`No pude leer tus cuentas publicitarias (permiso ads_management). Detalle: ${gm}`)}`);
+      }
+      let pages: any[] = [];
+      try { pages = (await client.get('/me/accounts', { params: { fields: 'id,name', limit: 100 } })).data.data ?? []; } catch { /* ignore */ }
+
+      if (!accounts.length) {
+        return back('error', `&msg=${encodeURIComponent(`Tu Facebook${meName ? ` (${meName})` : ''} se conectó, pero no tiene cuentas publicitarias accesibles. Asigná una cuenta publicitaria a esta cuenta en Business Manager y reconectá. (páginas encontradas: ${pages.length})`)}`);
+      }
 
       const acct = accounts[0];
       const adId = String(acct.id).replace('act_', '');
