@@ -5,6 +5,7 @@ import { StorageService } from '../uploads/storage.service';
 import { OpenaiService, Fmt } from './openai.service';
 import { IMAGE_PROVIDER, VIDEO_PROVIDER, ImageProvider, VideoProvider } from './providers/types';
 import { CREATOR_PRESETS, SCENE_BY_CATEGORY, creatorByKey } from './creators.config';
+import { expandCommands } from './commands.config';
 import { ffmpeg } from '../common/ffmpeg';
 import axios from 'axios';
 import * as os from 'os';
@@ -107,8 +108,10 @@ Devolvé JSON: { "chosenStyle": string (una de las claves de estilo), "concept":
   }, limit = 3): Promise<Array<{ key: string; label: string; description: string; prompt: string; url: string; model: string }>> {
     const styleDesc = STYLES[input.style] ?? STYLES.profesional;
     const objGuide = OBJECTIVES[input.objective] ?? OBJECTIVES.vender;
-    const briefLine = input.brief?.trim()
-      ? `\nEl usuario pidió EXPLÍCITAMENTE este tipo de imagen: "${input.brief.trim()}". Priorizá ese pedido en los 3 prompts (respetando el producto real de las fotos de referencia).`
+    // Comandos "/x" → directivas visuales en inglés; texto libre → pedido explícito.
+    const { fragments, rest } = expandCommands(input.brief);
+    const briefLine = (fragments.length || rest)
+      ? `\nDirectivas comerciales del usuario (aplicá TODO en los 3 prompts, en inglés, foto publicitaria hiperrealista pensada para vender): ${[...fragments, rest].filter(Boolean).join('; ')}. Respetá el producto real de las fotos de referencia.`
       : '';
 
     // 1 sola llamada GPT arma los 3 prompts visuales (barato)
@@ -136,7 +139,8 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
   async generateSingleImage(input: { product: ProductInfo; objective: string; style: string; format: Fmt; angleKey?: string; quality?: 'standard' | 'premium'; referenceImage?: string; referenceImages?: string[]; brief?: string }) {
     const styleDesc = STYLES[input.style] ?? STYLES.profesional;
     const angle = VARIANT_ANGLES.find(a => a.key === input.angleKey) ?? VARIANT_ANGLES[0];
-    const briefLine = input.brief?.trim() ? ` El usuario pidió: "${input.brief.trim()}" — priorizalo.` : '';
+    const { fragments: sf, rest: sr } = expandCommands(input.brief);
+    const briefLine = (sf.length || sr) ? ` Directivas del usuario (en inglés, publicitario): ${[...sf, sr].filter(Boolean).join('; ')}.` : '';
     const prompt = await this.openai.chat(
       'Sos experto en dirección de arte para Meta Ads. Escribís UN prompt visual en inglés.',
       `Producto: ${JSON.stringify(input.product)}. Estilo: ${styleDesc}. Ángulo: ${angle.label} (${angle.desc}).${briefLine} Un prompt visual en inglés, con composición/iluminación/fondo/espacio para texto, sin watermark.`,

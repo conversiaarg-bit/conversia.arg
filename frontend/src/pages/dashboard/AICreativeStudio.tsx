@@ -558,11 +558,17 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
   const q = hd ? 'premium' : undefined;
   return (
     <StepShell title="Generá la imagen" subtitle={s.strategy?.concept ? `Concepto: ${s.strategy.concept}` : 'La IA crea 3 variantes; elegí la que más te guste.'}>
-      {/* Brief: qué imagen querés */}
+      {/* Brief: qué imagen querés — texto libre o comandos "/" */}
       <div style={{ marginBottom: 16 }}>
-        <label style={{ fontSize: 12, color: C.textMuted, display: 'block', marginBottom: 6 }}>¿Cómo querés la imagen? <span style={{ color: C.textDim }}>(opcional — la IA lo tiene en cuenta)</span></label>
-        <input value={s.brief ?? ''} onChange={e => setBrief(e.target.value)} placeholder="Ej: tipo catálogo para vender en marketplace, fondo blanco, mostrando los 8 productos"
+        <label style={{ fontSize: 12, color: C.textMuted, display: 'block', marginBottom: 6 }}>¿Cómo querés la imagen? <span style={{ color: C.textDim }}>(texto libre o comandos <b style={{ color: C.accent }}>/</b>)</span></label>
+        <input value={s.brief ?? ''} onChange={e => setBrief(e.target.value)} placeholder="Ej: /product /ad /appetite /studio /white  —  o: 'tipo catálogo para marketplace'"
           style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '11px 13px', color: C.text, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
+          {['/product', '/ad', '/hero', '/appetite', '/studio', '/premium', '/white', '/closeup', '/hyperreal', '/scroll-stopping'].map(cmd => (
+            <button key={cmd} type="button" onClick={() => setBrief(((s.brief ?? '').trim() + ' ' + cmd).trim())}
+              style={{ fontSize: 10.5, fontFamily: "'DM Mono',monospace", color: C.textMuted, background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>{cmd}</button>
+          ))}
+        </div>
       </div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         {FORMATS.map(f => (
