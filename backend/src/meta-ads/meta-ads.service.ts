@@ -317,9 +317,12 @@ export class MetaAdsService {
 
   // 2) Callback: canjea el código por un token de larga duración, trae las cuentas
   //    publicitarias y páginas, guarda la primera y redirige al frontend.
-  async oauthCallback(code: string, state: string, backendBase: string): Promise<string> {
+  async oauthCallback(code: string, state: string, backendBase: string, fbError?: string): Promise<string> {
     const fe = this.frontendUrl;
     const back = (m: string, extra = '') => `${fe}/dashboard/integrations?meta=${m}${extra}`;
+    // Meta volvió con un error (o sin code/state) → mostramos un mensaje claro, no crasheamos.
+    if (fbError) return back('error', `&msg=${encodeURIComponent(fbError)}`);
+    if (!code || !state) return back('error', `&msg=${encodeURIComponent('Meta no devolvió el código de autorización. Falta autorizar la URI de redirección en el login de la app.')}`);
     try {
       const userId = this.readState(state);
       // código -> token corto

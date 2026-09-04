@@ -32,8 +32,17 @@ export class MetaAdsController {
   @Get('oauth/callback')
   @SkipTransform()
   @ApiExcludeEndpoint()
-  async oauthCallback(@Query('code') code: string, @Query('state') state: string, @Req() raw: ExpressRequest, @Res() res: Response) {
-    const url = await this.metaAdsService.oauthCallback(code, state, this.baseUrl(raw));
+  async oauthCallback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('error_description') errDesc: string,
+    @Query('error_message') errMsg: string,
+    @Query('error') err: string,
+    @Req() raw: ExpressRequest,
+    @Res() res: Response,
+  ) {
+    const fbError = errDesc || errMsg || (err ? `Meta rechazó la conexión (${err})` : '');
+    const url = await this.metaAdsService.oauthCallback(code, state, this.baseUrl(raw), fbError);
     return res.redirect(url);
   }
 
