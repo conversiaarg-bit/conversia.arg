@@ -21,6 +21,8 @@ const SKELETON: UgcScene[] = [
 export default function UgcCampaign({ costs, credits, setCredits }: { costs: Record<string, number>; credits: number; setCredits: (n: number) => void }) {
   const [name, setName] = useState('');
   const [cmd, setCmd] = useState('');   // estilo/comandos "/x" aplicados a todas las escenas
+  const [avatar, setAvatar] = useState('');  // descripción del avatar/persona
+  const [hd, setHd] = useState(false);  // Producto exacto (alta fidelidad, cuesta más)
   const [imageBase64, setImageBase64] = useState<string | undefined>();
   const [format] = useState<Fmt>('9:16');
   const [plan, setPlan] = useState<{ creator: string; scenes: UgcScene[] } | null>(null);
@@ -88,7 +90,7 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
       const scene = plan.scenes[i];
       setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
       try {
-        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd });
+        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar });
         setCredits(res.credits);
         if (res.videoUrl) anyVideo = true;
         setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
@@ -146,7 +148,7 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
     setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
     pushMsg('copilot', `Generando la escena ${i + 1} (${scene.title})…`);
     try {
-      const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd });
+      const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar });
       setCredits(res.credits);
       setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
       pushMsg('copilot', `✓ Escena ${i + 1} lista.`);
@@ -284,6 +286,16 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
         {recCmds.map(cmd2 => (
           <button key={cmd2} onClick={() => setCmd((cmd.trim() + ' ' + cmd2).trim())} style={{ fontSize: 10.5, fontFamily: "'DM Mono',monospace", color: C.accent, background: C.accentDim, border: `1px solid ${C.accent}44`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>{cmd2}</button>
         ))}
+      </div>
+
+      {/* Avatar (describir) + Producto exacto (HD) */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+        <input value={avatar} onChange={e => setAvatar(e.target.value)} placeholder="Avatar (opcional): ej. mujer joven, pelo castaño, sonriente…" title="Describí cómo querés la persona/avatar de las escenas" style={{ flex: 1, minWidth: 220, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '9px 12px', color: C.text, fontSize: 12.5, outline: 'none' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.surface, border: `1px solid ${hd ? C.accent : C.border}`, borderRadius: 10, padding: '6px 10px' }}>
+          <span style={{ fontSize: 12, color: C.textMuted }}>Producto exacto:</span>
+          <button onClick={() => setHd(false)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: !hd ? C.accentDim : 'transparent', color: !hd ? C.accent : C.textMuted }}>Económico</button>
+          <button onClick={() => setHd(true)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: hd ? C.accentDim : 'transparent', color: hd ? C.accent : C.textMuted }}>HD · exacto</button>
+        </div>
       </div>
 
       {askDur && (

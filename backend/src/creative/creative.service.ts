@@ -236,16 +236,19 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
   }
 
   // Genera UNA escena de la campaña (imagen persona+producto → video Seedance)
-  async generateUGCScene(input: { product: ProductInfo; scene: { key: string; imagePrompt: string; videoPrompt: string; seconds?: number }; referenceImage?: string; format?: Fmt; brief?: string }) {
+  async generateUGCScene(input: { product: ProductInfo; scene: { key: string; imagePrompt: string; videoPrompt: string; seconds?: number }; referenceImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string }) {
     const hasRef = !!input.referenceImage;
     const productLine = hasRef
-      ? `The person is clearly holding and showing the EXACT product from the reference image — keep the product packaging, brand, logo, colors and shape IDENTICAL to the reference, fully visible and unchanged, well-lit and in focus.`
+      ? `The person is clearly holding and showing the EXACT product from the reference image — keep the product packaging, brand, logo, colors, text and shape IDENTICAL to the reference, fully visible, unchanged, well-lit and in sharp focus, correct proportions.`
       : `holding/using the product "${input.product.name}".`;
+    const personLine = input.avatarDesc?.trim()
+      ? `A person matching this description: ${input.avatarDesc.trim()} (fictional, not a real or identifiable person, not a celebrity).`
+      : `A fully fictional AI-generated person (not real, not a celebrity).`;
     const { fragments, rest } = expandCommands(input.brief);
     const cmdLine = (fragments.length || rest) ? ` Commercial directives: ${[...fragments, rest].filter(Boolean).join('; ')}.` : '';
     const img = await this.imageProvider.generate({
-      prompt: `${input.scene.imagePrompt}. Vertical smartphone UGC photo of a fully fictional AI-generated person (not real, not a celebrity). ${productLine}${cmdLine} Natural lighting, no watermark, no text overlay.`,
-      format: input.format ?? '9:16', quality: 'standard', referenceImage: input.referenceImage,
+      prompt: `${input.scene.imagePrompt}. Vertical smartphone UGC photo. ${personLine} ${productLine}${cmdLine} Natural lighting, no watermark, no text overlay.`,
+      format: input.format ?? '9:16', quality: input.quality ?? 'standard', referenceImage: input.referenceImage,
     });
     const imageUrl = await this.persist(img.dataUrl, 'image');
 

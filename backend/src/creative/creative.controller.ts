@@ -172,9 +172,10 @@ export class CreativeController {
     // como imagen (no como video-UGC). Así no perdés plata por videos que no salen.
     const hasVideo = this.svc.videoAvailable;
     await this.assertFree(req, hasVideo ? 'video' : 'image');
+    const imgOp: CreditOperation = body?.quality === 'premium' ? 'image_premium' : 'image_standard';
     const billing = hasVideo
       ? { operation: 'ugc_video_10' as CreditOperation, amount: CREDIT_COSTS.ugc_video_10, provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds: 10 }
-      : { operation: 'image_standard' as CreditOperation, amount: CREDIT_COSTS.image_standard, provider: PROVIDERS.image, model: PROVIDERS.openaiImageModel };
+      : { operation: imgOp, amount: CREDIT_COSTS[imgOp], provider: PROVIDERS.image, model: PROVIDERS.openaiImageModel };
     const { result, credits, creditsUsed } = await this.billed(req, billing, () => this.svc.generateUGCScene(body));
     // Auto-guardar la escena en el historial para que NO se pierda (fire-and-forget)
     const r = result as any;
