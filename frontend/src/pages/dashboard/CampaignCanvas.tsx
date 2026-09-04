@@ -28,7 +28,7 @@ async function dlNode(url: string, name: string) {
 
 // Canvas de flujo estilo pipeline: Entrada → Generación → Salida.
 // Cada nodo lleva su modelo de IA en el header; nodos de texto o de media; Copiloto externo.
-export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCost, onAddScene, onDeleteScene, finalVideoUrl, assembling, onAssemble, productImage, productName, onCancel }: {
+export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCost, onAddScene, onDeleteScene, finalVideoUrl, assembling, onAssemble, productImage, productName, onCancel, onTemplates }: {
   plan: { creator: string; scenes: UgcScene[] };
   runs: Record<string, SceneRun>;
   running: boolean;
@@ -42,6 +42,7 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
   productImage?: string;
   productName?: string;
   onCancel?: () => void;
+  onTemplates?: () => void;
 }) {
   const [zoom, setZoom] = useState(0.7);
   const [pan, setPan] = useState({ x: 30, y: 20 });
@@ -184,6 +185,13 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
         <ZBtn onClick={() => setZoom(z => Math.min(1.4, +(z + 0.1).toFixed(2)))}>+</ZBtn>
         <ZBtn onClick={() => { setZoom(0.7); setPan({ x: 30, y: 20 }); }}>⤢</ZBtn>
       </div>
+
+      {/* Plantillas / Avatares (barra inferior) */}
+      {onTemplates && (
+        <button onClick={onTemplates} title="Plantillas / Avatares — elegí una persona y reutilizala" style={{ position: 'absolute', bottom: 12, left: 320, zIndex: 4, display: 'flex', alignItems: 'center', gap: 8, background: '#0f0f1a', border: `1px solid ${C.borderBright}`, borderRadius: 10, padding: '9px 14px', color: C.text, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          🧑 Plantillas
+        </button>
+      )}
 
       {/* Panel del nodo */}
       {sel && (
