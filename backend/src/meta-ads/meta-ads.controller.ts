@@ -1,5 +1,5 @@
-import { Controller, Post, Get, Delete, Body, Query, Res, UseGuards, Request } from '@nestjs/common';
-import type { Response } from 'express';
+import { Controller, Post, Get, Delete, Body, Query, Req, Res, UseGuards, Request } from '@nestjs/common';
+import type { Request as ExpressRequest, Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiExcludeEndpoint } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SkipTransform } from '../common/decorators/skip-transform.decorator';
@@ -11,6 +11,13 @@ import { ConnectMetaAccountDto } from './dto/connect-meta-account.dto';
 export class MetaAdsController {
   constructor(private readonly metaAdsService: MetaAdsService) {}
 
+  // Detecta la URL pública del backend desde el request (proxy de Railway incluido).
+  private baseUrl(req: ExpressRequest): string {
+    const proto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0] || req.protocol || 'https';
+    const host = (req.headers['x-forwarded-host'] as string) || req.headers.host;
+    return process.env.BACKEND_URL || `${proto}://${host}`;
+  }
+
   // ── OAuth (conectar Meta desde adentro de Conversia) ──────────────────────
 
   @Get('oauth/url')
@@ -18,15 +25,15 @@ export class MetaAdsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'URL del login de Facebook para conectar Meta' })
   oauthUrl(@Request() req: any) {
-    return this.metaAdsService.oauthUrl(req.user.id);
+    return this.metaAdsService.oauthUrl(req.user.id, this.baseUrl(req));
   }
 
   // Meta redirige el navegador acá (sin nuestro JWT) → identidad vía `state` firmado.
   @Get('oauth/callback')
   @SkipTransform()
   @ApiExcludeEndpoint()
-  async oauthCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
-    const url = await this.metaAdsService.oauthCallback(code, state);
+  async oauthCallback(@Query('code') code: string, @Query('state') state: string, @Req() raw: ExpressRequest, @Res() res: Response) {
+    const url = await this.metaAdsService.oauthCallback(code, state, this.baseUrl(raw));
     return res.redirect(url);
   }
 

@@ -273,16 +273,17 @@ export class MetaAdsService {
   private get appId() { return this.config.get<string>('meta.appId', ''); }
   private get appSecret() { return this.config.get<string>('meta.appSecret', ''); }
   private get frontendUrl() { return this.config.get<string>('frontendUrl', ''); }
-  private get redirectUri() { return `${process.env.BACKEND_URL ?? ''}/api/v1/meta-ads/oauth/callback`; }
+  // La URL del backend se detecta del request (o BACKEND_URL si está); no hay que configurarla.
+  private redirectUri(backendBase: string) { return `${backendBase}/api/v1/meta-ads/oauth/callback`; }
 
   // 1) URL del diálogo de login de Facebook (el usuario la abre y autoriza).
-  oauthUrl(userId: string): { url: string } {
+  oauthUrl(userId: string, backendBase: string): { url: string } {
     if (!this.appId) throw new BadRequestException('Meta no está configurado en el servidor (falta META_APP_ID).');
     const state = this.encryption.encrypt(`${userId}:${Date.now()}`);
     const scope = ['ads_management', 'ads_read', 'pages_show_list', 'pages_read_engagement', 'business_management'].join(',');
     const url = `https://www.facebook.com/${this.apiVersion}/dialog/oauth`
       + `?client_id=${encodeURIComponent(this.appId)}`
-      + `&redirect_uri=${encodeURIComponent(this.redirectUri)}`
+      + `&redirect_uri=${encodeURIComponent(this.redirectUri(backendBase))}`
       + `&state=${encodeURIComponent(state)}`
       + `&scope=${encodeURIComponent(scope)}`
       + `&response_type=code`;
@@ -310,14 +311,14 @@ export class MetaAdsService {
 
   // 2) Callback: canjea el código por un token de larga duración, trae las cuentas
   //    publicitarias y páginas, guarda la primera y redirige al frontend.
-  async oauthCallback(code: string, state: string): Promise<string> {
+  async oauthCallback(code: string, state: string, backendBase: string): Promise<string> {
     const fe = this.frontendUrl;
     const back = (m: string, extra = '') => `${fe}/dashboard/integrations?meta=${m}${extra}`;
     try {
       const userId = this.readState(state);
       // código -> token corto
       const short = (await axios.get(`${this.baseUrl}/oauth/access_token`, {
-        params: { client_id: this.appId, client_secret: this.appSecret, redirect_uri: this.redirectUri, code },
+        params: { client_id: this.appId, client_secret: this.appSecret, redirect_uri: this.redirectUri(backendBase), code },
       })).data.access_token;
       // token corto -> token de larga duración (~60 días, renovable)
       const long = (await axios.get(`${this.baseUrl}/oauth/access_token`, {

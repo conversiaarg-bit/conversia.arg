@@ -1,7 +1,7 @@
 export default () => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
   nodeEnv: process.env.NODE_ENV ?? 'development',
-  frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3001',
+  frontendUrl: process.env.FRONTEND_URL ?? (process.env.NODE_ENV === 'production' ? 'https://conversia-arg.vercel.app' : 'http://localhost:3001'),
 
   database: {
     host: process.env.DB_HOST ?? 'localhost',
