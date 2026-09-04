@@ -71,14 +71,18 @@ export class CreativeController {
 
   // PASO 1 (gratis)
   @Post('analyze') @HttpCode(HttpStatus.OK)
-  async analyze(@Body() body: { name?: string; description?: string; imageBase64?: string }) {
-    return this.svc.analyzeProduct(body);
+  async analyze(@Body() body: { name?: string; description?: string; imageBase64?: string }, @Request() req: any) {
+    const r = await this.svc.analyzeProduct(body);
+    await this.cost.log({ userId: req.user.id, provider: 'openai', model: PROVIDERS.openaiChatModel, operation: body.imageBase64 ? 'analyze_vision' : 'analyze', estimatedProviderCostUsd: body.imageBase64 ? 0.0015 : 0.0004, creditsConsumed: 0, status: 'completed' }).catch(() => {});
+    return r;
   }
 
-  // PASO 2+3 (gratis)
+  // PASO 2+3 (gratis para el usuario; registramos el costo real de IA de texto)
   @Post('strategy') @HttpCode(HttpStatus.OK)
-  async strategy(@Body() body: { product: ProductInfo; objective: string; style: string }) {
-    return this.svc.buildStrategy(body);
+  async strategy(@Body() body: { product: ProductInfo; objective: string; style: string }, @Request() req: any) {
+    const r = await this.svc.buildStrategy(body);
+    await this.cost.log({ userId: req.user.id, provider: 'openai', model: PROVIDERS.openaiChatModel, operation: 'strategy', estimatedProviderCostUsd: 0.0004, creditsConsumed: 0, status: 'completed' }).catch(() => {});
+    return r;
   }
 
   // PASO 4 — 3 variantes
@@ -135,7 +139,11 @@ export class CreativeController {
 
   // Auto-selección de creator/escena/guion (gratis)
   @Post('ugc-auto') @HttpCode(HttpStatus.OK)
-  async ugcAuto(@Body() body: { product: ProductInfo }) { return this.svc.pickUGC(body.product); }
+  async ugcAuto(@Body() body: { product: ProductInfo }, @Request() req: any) {
+    const r = await this.svc.pickUGC(body.product);
+    await this.cost.log({ userId: req.user.id, provider: 'openai', model: PROVIDERS.openaiChatModel, operation: 'ugc_auto', estimatedProviderCostUsd: 0.0004, creditsConsumed: 0, status: 'completed' }).catch(() => {});
+    return r;
+  }
 
   // Genera UGC (imagen persona sintética + video). Cuesta ugc_video_10.
   @Post('ugc') @HttpCode(HttpStatus.OK)
@@ -150,7 +158,11 @@ export class CreativeController {
 
   // ── Campaña UGC (agente planifica escenas tipo nodos) ───────────────────────
   @Post('ugc-campaign/plan') @HttpCode(HttpStatus.OK)
-  async ugcPlan(@Body() body: { product: ProductInfo; creatorKey?: string }) { return this.svc.planUGCCampaign(body.product, body.creatorKey); }
+  async ugcPlan(@Body() body: { product: ProductInfo; creatorKey?: string }, @Request() req: any) {
+    const r = await this.svc.planUGCCampaign(body.product, body.creatorKey);
+    await this.cost.log({ userId: req.user.id, provider: 'openai', model: PROVIDERS.openaiChatModel, operation: 'ugc_plan', estimatedProviderCostUsd: 0.0008, creditsConsumed: 0, status: 'completed' }).catch(() => {});
+    return r;
+  }
 
   // Genera una escena de la campaña (imagen + video). Cuesta ugc_video_10.
   @Post('ugc-campaign/scene') @HttpCode(HttpStatus.OK)

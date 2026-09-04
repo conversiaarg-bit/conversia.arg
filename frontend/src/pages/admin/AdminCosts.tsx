@@ -3,6 +3,15 @@ import { C } from '../../styles/theme';
 import { Spinner } from '../../components/ui';
 import { creditsApi, type Plan } from '../../api/credits';
 
+// Nombres claros para cada operación de IA en el panel.
+const OP_LABELS: Record<string, string> = {
+  image_standard: 'Imagen (económica)', image_premium: 'Imagen (HD)',
+  video_5: 'Video 5s', video_10: 'Video 10s', ugc_video_10: 'Escena UGC (nodo)',
+  product_video_10: 'Video de producto', offer_video_10: 'Video de oferta',
+  analyze: 'Análisis de producto', analyze_vision: 'Análisis de foto', strategy: 'Estrategia',
+  ugc_auto: 'Auto-guion UGC', ugc_plan: 'Planificar campaña UGC', copy: 'Copy publicitario', tts: 'Voz (TTS)',
+};
+
 // Panel del CEO: monitoreo de gasto real de IA, márgenes y precios de venta sugeridos.
 export default function AdminCosts() {
   const [metrics, setMetrics] = useState<any>(null);
@@ -174,6 +183,29 @@ export default function AdminCosts() {
       {/* Gasto real de la IA (la key de OpenAI/Seedance) */}
       <h3 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 17, margin: '0 0 4px' }}>Gasto real de la IA</h3>
       <p style={{ color: C.textMuted, fontSize: 13, margin: '0 0 12px' }}>Lo que se consume de las API keys (OpenAI / Seedance), estimado por operación. Acumulado: <b style={{ color: C.amber }}>{money(aiCost)}</b> · este mes: <b style={{ color: C.amber }}>{money(aiMonth)}</b></p>
+
+      {/* Resumen agrupado por tipo */}
+      {(() => {
+        const ops: any[] = m.byOperation ?? [];
+        const GROUPS: [string, string, string[]][] = [
+          ['🖼️ Imágenes', '#4da6ff', ['image_standard', 'image_premium']],
+          ['🎬 Videos', '#00d68f', ['video_5', 'video_10', 'ugc_video_10', 'product_video_10', 'offer_video_10']],
+          ['🧠 Preguntas / IA de texto', '#7c5cfc', ['analyze', 'analyze_vision', 'strategy', 'ugc_auto', 'ugc_plan', 'copy', 'tts']],
+        ];
+        const sum = (keys: string[]) => ops.filter(o => keys.includes(o.operation)).reduce((a, o) => ({ n: a.n + (+o.n), c: a.c + (+o.cost) }), { n: 0, c: 0 });
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 14, marginBottom: 18 }}>
+            {GROUPS.map(([label, color, keys]) => { const s = sum(keys); return (
+              <div key={label} style={{ ...card, padding: 16, borderLeft: `3px solid ${color}` }}>
+                <div style={{ fontSize: 12.5, color: C.textMuted }}>{label}</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 24, color, lineHeight: 1.2, marginTop: 4 }}>{money(s.c)}</div>
+                <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>{s.n} generaci{s.n === 1 ? 'ón' : 'ones'}</div>
+              </div>
+            ); })}
+          </div>
+        );
+      })()}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 16, marginBottom: 26 }}>
         <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
           <Row head cells={['Día', 'Generaciones', 'Gasto IA']} />
@@ -183,7 +215,7 @@ export default function AdminCosts() {
         <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
           <Row head cells={['Operación', 'Usos', 'Gasto IA']} />
           {(m.byOperation ?? []).length === 0 ? <div style={{ padding: 16, color: C.textMuted, fontSize: 13 }}>Sin gasto todavía.</div> :
-            (m.byOperation as any[]).map((r, i) => <Row key={i} cells={[r.operation, `${r.n}`, money(+r.cost)]} />)}
+            (m.byOperation as any[]).map((r, i) => <Row key={i} cells={[OP_LABELS[r.operation] ?? r.operation, `${r.n}`, money(+r.cost)]} />)}
         </div>
       </div>
 
