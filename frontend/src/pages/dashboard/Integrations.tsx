@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Tag, Spinner } from '../../components/ui';
 import { integrationsApi, type Integration } from '../../api/integrations';
+import { metaAdsApi, type MetaAsset } from '../../api/metaAds';
 import { C } from '../../styles/theme';
+
+const unwrap = (res: any) => res?.data?.data ?? res?.data ?? res;
 
 type IntegId = 'meta' | 'whatsapp' | 'stripe' | 'instagram';
 
@@ -26,6 +29,65 @@ export default function Integrations() {
   const [errors, setErrors] = useState<Record<IntegId, string>>({ meta: '', whatsapp: '', stripe: '', instagram: '' });
   const [success, setSuccess] = useState<Record<IntegId, string>>({ meta: '', whatsapp: '', stripe: '', instagram: '' });
   const [fetching, setFetching] = useState(true);
+
+  // ── Meta vía OAuth (conectar con Facebook) ──
+  const [meta, setMeta] = useState<{ connected: boolean; name?: string }>({ connected: false });
+  const [metaBusy, setMetaBusy] = useState(false);
+  const [metaNotice, setMetaNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [picker, setPicker] = useState<{ adAccounts: MetaAsset[]; pages: MetaAsset[]; ad: string; page: string } | null>(null);
+
+  const refreshMeta = useCallback(async () => {
+    try {
+      const accts = unwrap(await metaAdsApi.getAccounts()) as any[];
+      if (Array.isArray(accts) && accts.length) setMeta({ connected: true, name: accts[0].name });
+      else setMeta({ connected: false });
+    } catch { /* sin conexión */ }
+  }, []);
+
+  const connectMeta = async () => {
+    setMetaBusy(true); setMetaNotice(null);
+    try {
+      const { url } = unwrap(await metaAdsApi.oauthUrl()) as { url: string };
+      window.location.href = url; // el usuario autoriza en Facebook y vuelve al callback
+    } catch (e: any) {
+      setMetaNotice({ ok: false, text: e?.response?.data?.message || 'Meta no está configurado en el servidor todavía.' });
+      setMetaBusy(false);
+    }
+  };
+  const openPicker = async () => {
+    try {
+      const a = unwrap(await metaAdsApi.assets()) as { adAccounts: MetaAsset[]; pages: MetaAsset[] };
+      setPicker({ adAccounts: a.adAccounts || [], pages: a.pages || [], ad: a.adAccounts?.[0]?.id || '', page: a.pages?.[0]?.id || '' });
+    } catch (e: any) { setMetaNotice({ ok: false, text: e?.response?.data?.message || 'No se pudieron traer las cuentas.' }); }
+  };
+  const saveSelection = async () => {
+    if (!picker) return;
+    setMetaBusy(true);
+    try {
+      await metaAdsApi.select(picker.ad, picker.page || undefined);
+      setPicker(null); await refreshMeta();
+      setMetaNotice({ ok: true, text: '✓ Cuenta y página actualizadas.' });
+    } catch (e: any) { setMetaNotice({ ok: false, text: e?.response?.data?.message || 'No se pudo guardar la selección.' }); }
+    setMetaBusy(false);
+  };
+  const disconnectMeta = async () => {
+    setMetaBusy(true);
+    try { await metaAdsApi.disconnect(); setMeta({ connected: false }); setMetaNotice(null); } catch { /* ignore */ }
+    setMetaBusy(false);
+  };
+  useEffect(() => { refreshMeta(); }, [refreshMeta]);
+
+  // Al volver del login de Facebook, Meta nos redirige con ?meta=connected|error
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const m = p.get('meta');
+    if (m === 'connected') setMetaNotice({ ok: true, text: `✓ Meta conectado${p.get('name') ? ` · ${p.get('name')}` : ''}` });
+    else if (m === 'error') setMetaNotice({ ok: false, text: `No se pudo conectar: ${p.get('msg') || 'error de Meta'}` });
+    if (m) {
+      if (p.get('select')) openPicker();
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setF = (id: IntegId, k: string, v: string) => {
     setForms(p => ({ ...p, [id]: { ...p[id], [k]: v } }));
@@ -145,41 +207,92 @@ export default function Integrations() {
         <div style={{ fontSize: 14, color: C.textMuted }}>Conectá tus cuentas para activar la automatización completa. Las credenciales se cifran con AES-256-GCM.</div>
         <div style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: C.textMuted, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 999, padding: '6px 13px' }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: C.green }} />
-          {Object.values(connected).filter(Boolean).length} de 4 conectadas
+          {(meta.connected ? 1 : 0) + (['whatsapp', 'stripe', 'instagram'] as IntegId[]).filter(k => connected[k]).length} de 4 conectadas
         </div>
       </div>
 
-      <IntegCard id="meta" icon="📘" title="Meta Ads" color="#1877f2" required hint="Requerido para crear y gestionar campañas en Facebook e Instagram">
-        <div style={{ background: C.amberDim, border: `1px solid ${C.amber}33`, borderRadius: 8, padding: '9px 12px', marginBottom: 13, fontSize: 12, color: C.amber }}>
-          ⚠️ Necesitás un Access Token de larga duración con permisos ads_management.
+      <div className="cv-card fade-in" style={{ marginBottom: 16, padding: 20, border: meta.connected ? `1.5px solid ${C.green}55` : `1px solid ${C.border}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 16 }}>
+          <span style={{ width: 46, height: 46, borderRadius: 13, flexShrink: 0, background: '#1877f222', border: '1px solid #1877f244', display: 'grid', placeItems: 'center', fontSize: 23 }}>📘</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 16 }}>Meta Ads</span>
+              {!meta.connected && <Tag t="tr">Requerido</Tag>}
+              {meta.connected ? <Tag t="tg">● Conectado</Tag> : <Tag t="tb">○ Sin conectar</Tag>}
+            </div>
+            <div style={{ fontSize: 12.5, color: C.textMuted, marginTop: 3 }}>Conectá Facebook e Instagram para crear y publicar campañas.</div>
+          </div>
+          {meta.connected && <button className="btn btn-d" style={{ fontSize: 12, padding: '5px 11px' }} onClick={disconnectMeta} disabled={metaBusy}>Desconectar</button>}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-          <div className="fg">
-            <label className="flbl">Access Token <span style={{ color: C.red }}>*</span></label>
-            <input className="finput" type="password" placeholder="EAAxxxxxxxxxxxxxxxxx..." value={forms.meta.accessToken} onChange={e => setF('meta', 'accessToken', e.target.value)} />
+
+        {metaNotice && <div className={metaNotice.ok ? 'ok-box' : 'err-box'}>{metaNotice.text}</div>}
+
+        {meta.connected ? (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12 }}>
+              <span style={{ color: C.green }}>✓</span> Cuenta activa: <b>{meta.name || 'Meta'}</b>
+              <button onClick={openPicker} style={{ marginLeft: 'auto', background: 'transparent', border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '5px 11px', fontSize: 12, cursor: 'pointer' }}>Cambiar cuenta</button>
+            </div>
+            {picker && (
+              <div style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 10, padding: 13, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="fg">
+                  <label className="flbl">Cuenta publicitaria</label>
+                  <select className="fsel" value={picker.ad} onChange={e => setPicker({ ...picker, ad: e.target.value })}>
+                    {picker.adAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.id})</option>)}
+                  </select>
+                </div>
+                <div className="fg">
+                  <label className="flbl">Página de Facebook</label>
+                  <select className="fsel" value={picker.page} onChange={e => setPicker({ ...picker, page: e.target.value })}>
+                    <option value="">— Sin página —</option>
+                    {picker.pages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-p" style={{ fontSize: 13, padding: '8px 16px' }} onClick={saveSelection} disabled={metaBusy}>{metaBusy ? 'Guardando…' : 'Guardar'}</button>
+                  <button className="btn btn-d" style={{ fontSize: 13, padding: '8px 16px' }} onClick={() => setPicker(null)}>Cancelar</button>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="g2" style={{ gap: 11 }}>
-            <div className="fg">
-              <label className="flbl">Ad Account ID <span style={{ color: C.red }}>*</span></label>
-              <input className="finput" placeholder="act_123456789" value={forms.meta.adAccountId} onChange={e => setF('meta', 'adAccountId', e.target.value)} />
+        ) : (
+          <>
+            <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 14, lineHeight: 1.55 }}>
+              Autorizás una vez en Facebook y Conversia trae tus cuentas publicitarias y páginas automáticamente. No necesitás copiar ningún token.
             </div>
-            <div className="fg">
-              <label className="flbl">Business Manager ID</label>
-              <input className="finput" placeholder="123456789" value={forms.meta.businessId} onChange={e => setF('meta', 'businessId', e.target.value)} />
-            </div>
-          </div>
-          <div className="g2" style={{ gap: 11 }}>
-            <div className="fg">
-              <label className="flbl">Pixel ID</label>
-              <input className="finput" placeholder="123456789" value={forms.meta.pixelId} onChange={e => setF('meta', 'pixelId', e.target.value)} />
-            </div>
-            <div className="fg">
-              <label className="flbl">Page ID (Facebook)</label>
-              <input className="finput" placeholder="123456789" value={forms.meta.pageId} onChange={e => setF('meta', 'pageId', e.target.value)} />
-            </div>
-          </div>
-        </div>
-      </IntegCard>
+            <button onClick={connectMeta} disabled={metaBusy}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1877f2', color: '#fff', border: 'none', borderRadius: 11, padding: '11px 20px', fontSize: 14, fontWeight: 700, cursor: metaBusy ? 'wait' : 'pointer', opacity: metaBusy ? 0.7 : 1 }}>
+              {metaBusy ? <Spinner color="#fff" /> : <span style={{ fontSize: 17 }}>📘</span>}
+              {metaBusy ? 'Redirigiendo…' : 'Conectar con Facebook'}
+            </button>
+
+            <details style={{ marginTop: 14 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 12, color: C.textMuted }}>Opción avanzada: pegar un token manualmente</summary>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 11, marginTop: 12 }}>
+                <div className="fg">
+                  <label className="flbl">Access Token <span style={{ color: C.red }}>*</span></label>
+                  <input className="finput" type="password" placeholder="EAAxxxxxxxxxxxxxxxxx..." value={forms.meta.accessToken} onChange={e => setF('meta', 'accessToken', e.target.value)} />
+                </div>
+                <div className="g2" style={{ gap: 11 }}>
+                  <div className="fg">
+                    <label className="flbl">Ad Account ID <span style={{ color: C.red }}>*</span></label>
+                    <input className="finput" placeholder="act_123456789" value={forms.meta.adAccountId} onChange={e => setF('meta', 'adAccountId', e.target.value)} />
+                  </div>
+                  <div className="fg">
+                    <label className="flbl">Page ID (Facebook)</label>
+                    <input className="finput" placeholder="123456789" value={forms.meta.pageId} onChange={e => setF('meta', 'pageId', e.target.value)} />
+                  </div>
+                </div>
+                {errors.meta && <div className="err-box">{errors.meta}</div>}
+                <button className="btn btn-p" style={{ fontSize: 13, padding: '9px 18px', alignSelf: 'flex-start' }} disabled={loading.meta}
+                  onClick={async () => { await connect('meta'); refreshMeta(); }}>
+                  {loading.meta ? <><Spinner color="#fff" /> Guardando…</> : 'Conectar con token'}
+                </button>
+              </div>
+            </details>
+          </>
+        )}
+      </div>
 
       <IntegCard id="whatsapp" icon="💬" title="WhatsApp Business API" color="#25d366" required hint="Requerido para redirigir leads con tracking de conversaciones">
         <div style={{ background: C.accentDim, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: '9px 12px', marginBottom: 13, fontSize: 12, color: C.accent }}>

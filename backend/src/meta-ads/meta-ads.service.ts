@@ -268,6 +268,111 @@ export class MetaAdsService {
     return { message: `Campaña ${action === 'pause' ? 'pausada' : 'activada'}` };
   }
 
+  // ── OAuth con Facebook (conectar Meta desde adentro de Conversia) ─────────
+
+  private get appId() { return this.config.get<string>('meta.appId', ''); }
+  private get appSecret() { return this.config.get<string>('meta.appSecret', ''); }
+  private get frontendUrl() { return this.config.get<string>('frontendUrl', ''); }
+  private get redirectUri() { return `${process.env.BACKEND_URL ?? ''}/api/v1/meta-ads/oauth/callback`; }
+
+  // 1) URL del diálogo de login de Facebook (el usuario la abre y autoriza).
+  oauthUrl(userId: string): { url: string } {
+    if (!this.appId) throw new BadRequestException('Meta no está configurado en el servidor (falta META_APP_ID).');
+    const state = this.encryption.encrypt(`${userId}:${Date.now()}`);
+    const scope = ['ads_management', 'ads_read', 'pages_show_list', 'pages_read_engagement', 'business_management'].join(',');
+    const url = `https://www.facebook.com/${this.apiVersion}/dialog/oauth`
+      + `?client_id=${encodeURIComponent(this.appId)}`
+      + `&redirect_uri=${encodeURIComponent(this.redirectUri)}`
+      + `&state=${encodeURIComponent(state)}`
+      + `&scope=${encodeURIComponent(scope)}`
+      + `&response_type=code`;
+    return { url };
+  }
+
+  private readState(state: string): string {
+    const [userId, ts] = this.encryption.decrypt(state).split(':');
+    if (!userId || !ts || Date.now() - Number(ts) > 15 * 60 * 1000) {
+      throw new BadRequestException('Sesión de conexión inválida o expirada. Intentá de nuevo.');
+    }
+    return userId;
+  }
+
+  private async saveOauthAccount(userId: string, name: string, adAccountId: string, pageId: string | null, encToken: string) {
+    await this.db.query(
+      `INSERT INTO meta_accounts (user_id, name, meta_ad_account_id, meta_page_id, access_token)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (user_id, meta_ad_account_id) DO UPDATE SET
+         name = EXCLUDED.name, meta_page_id = EXCLUDED.meta_page_id,
+         access_token = EXCLUDED.access_token, is_active = TRUE, updated_at = NOW()`,
+      [userId, name, adAccountId, pageId, encToken],
+    );
+  }
+
+  // 2) Callback: canjea el código por un token de larga duración, trae las cuentas
+  //    publicitarias y páginas, guarda la primera y redirige al frontend.
+  async oauthCallback(code: string, state: string): Promise<string> {
+    const fe = this.frontendUrl;
+    const back = (m: string, extra = '') => `${fe}/dashboard/integrations?meta=${m}${extra}`;
+    try {
+      const userId = this.readState(state);
+      // código -> token corto
+      const short = (await axios.get(`${this.baseUrl}/oauth/access_token`, {
+        params: { client_id: this.appId, client_secret: this.appSecret, redirect_uri: this.redirectUri, code },
+      })).data.access_token;
+      // token corto -> token de larga duración (~60 días, renovable)
+      const long = (await axios.get(`${this.baseUrl}/oauth/access_token`, {
+        params: { grant_type: 'fb_exchange_token', client_id: this.appId, client_secret: this.appSecret, fb_exchange_token: short },
+      })).data.access_token;
+
+      const client = this.api(long);
+      const accounts = (await client.get('/me/adaccounts', { params: { fields: 'id,name,account_status', limit: 100 } })).data.data ?? [];
+      const pages = (await client.get('/me/accounts', { params: { fields: 'id,name', limit: 100 } })).data.data ?? [];
+      if (!accounts.length) return back('error', `&msg=${encodeURIComponent('Tu cuenta de Meta no tiene cuentas publicitarias accesibles.')}`);
+
+      const acct = accounts[0];
+      const adId = String(acct.id).replace('act_', '');
+      await this.saveOauthAccount(userId, acct.name || 'Meta', adId, pages[0]?.id ?? null, this.encryption.encrypt(long));
+      // si hay más de una cuenta/página, el frontend ofrece elegir
+      const multi = accounts.length > 1 || pages.length > 1 ? '&select=1' : '';
+      return back('connected', `&name=${encodeURIComponent(acct.name || 'Meta')}${multi}`);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message ?? err.message ?? 'No se pudo conectar con Meta';
+      this.logger.error(`OAuth Meta falló: ${msg}`);
+      return back('error', `&msg=${encodeURIComponent(msg)}`);
+    }
+  }
+
+  // 3) Lista las cuentas publicitarias y páginas del token conectado (para elegir).
+  async listAssets(userId: string) {
+    const { rows } = await this.db.query(
+      `SELECT access_token FROM meta_accounts WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1`, [userId],
+    );
+    if (!rows.length) throw new BadRequestException('No hay una cuenta de Meta conectada.');
+    const client = this.apiWithStoredToken(rows[0].access_token);
+    const adAccounts = (await client.get('/me/adaccounts', { params: { fields: 'id,name,account_status', limit: 100 } })).data.data ?? [];
+    const pages = (await client.get('/me/accounts', { params: { fields: 'id,name', limit: 100 } })).data.data ?? [];
+    return { adAccounts, pages };
+  }
+
+  // 4) Fija qué cuenta publicitaria + página usar (reutiliza el token conectado).
+  async selectAccount(userId: string, adAccountId: string, pageId?: string) {
+    const { rows } = await this.db.query(
+      `SELECT access_token FROM meta_accounts WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1`, [userId],
+    );
+    if (!rows.length) throw new BadRequestException('No hay una cuenta de Meta conectada.');
+    const token = rows[0].access_token;
+    const adId = String(adAccountId).replace('act_', '');
+    const info = (await this.apiWithStoredToken(token).get(`/act_${adId}`, { params: { fields: 'name' } })).data;
+    await this.saveOauthAccount(userId, info.name || 'Meta', adId, pageId ?? null, token);
+    return { ok: true, name: info.name };
+  }
+
+  // 5) Desconectar Meta (borra las cuentas vinculadas del usuario).
+  async disconnect(userId: string) {
+    await this.db.query('DELETE FROM meta_accounts WHERE user_id = $1', [userId]);
+    return { ok: true };
+  }
+
   // ── Get ad accounts for user ──────────────────────────────────────────────
 
   async getAccounts(userId: string) {
