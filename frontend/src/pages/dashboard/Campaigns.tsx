@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Filter, Plus, Play, Pause, RefreshCw,
   TrendingUp, TrendingDown, ChevronUp, ChevronDown,
-  BarChart2, Users, DollarSign, MoreVertical, Zap, Award,
+  BarChart2, Users, DollarSign, MoreVertical, Zap, Award, Rocket,
 } from 'lucide-react';
 import { Tag, Spinner } from '../../components/ui';
 import {
@@ -61,13 +61,25 @@ export default function Campaigns() {
     setActionId(null);
   };
 
+  const publishCampaign = async (c: CampaignRow) => {
+    setActionId(c.id);
+    try {
+      await campaignsApi.publish(c.id);
+      setCampaigns(p => p.map(x => x.id === c.id ? { ...x, status: 'active' } : x));
+      showToast(`Campaña publicada en Meta: "${c.name}"`);
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || 'No se pudo publicar. Conectá Meta Ads y revisá los datos de la campaña.');
+    }
+    setActionId(null);
+  };
+
   const handleSort = (key: string) => {
     if (sortKey === key) setSortAsc(v => !v);
     else { setSortKey(key); setSortAsc(false); }
   };
 
   const tagVariant = (s: string) => s === 'active' ? 'tg' : s === 'paused' ? 'tr' : s === 'optimizing' ? 'ta' : 'tb';
-  const statusLabel = (s: string) => s === 'active' ? 'Activa' : s === 'paused' ? 'Pausada' : s === 'optimizing' ? 'Optimizando' : s;
+  const statusLabel = (s: string) => s === 'active' ? 'Activa' : s === 'paused' ? 'Pausada' : s === 'optimizing' ? 'Optimizando' : s === 'draft' ? 'Borrador' : s;
 
   const filtered = campaigns
     .filter(c => {
@@ -313,17 +325,28 @@ export default function Campaigns() {
                     </td>
                     <td>
                       <div className="flex items-center gap-1.5">
-                        <button
-                          className={`btn ${isActive ? 'btn-d' : 'btn-green'} flex items-center gap-1.5`}
-                          style={{ padding: '5px 11px', fontSize: 11 }}
-                          onClick={() => toggleCampaign(c)}
-                          disabled={actionId === c.id}
-                        >
-                          {actionId === c.id
-                            ? <Spinner size={11} />
-                            : isActive ? <><Pause size={11} /> Pausar</> : <><Play size={11} /> Activar</>
-                          }
-                        </button>
+                        {c.status === 'draft' ? (
+                          <button
+                            className="btn btn-p flex items-center gap-1.5"
+                            style={{ padding: '5px 11px', fontSize: 11 }}
+                            onClick={() => publishCampaign(c)}
+                            disabled={actionId === c.id}
+                          >
+                            {actionId === c.id ? <Spinner size={11} /> : <><Rocket size={11} /> Publicar</>}
+                          </button>
+                        ) : (
+                          <button
+                            className={`btn ${isActive ? 'btn-d' : 'btn-green'} flex items-center gap-1.5`}
+                            style={{ padding: '5px 11px', fontSize: 11 }}
+                            onClick={() => toggleCampaign(c)}
+                            disabled={actionId === c.id}
+                          >
+                            {actionId === c.id
+                              ? <Spinner size={11} />
+                              : isActive ? <><Pause size={11} /> Pausar</> : <><Play size={11} /> Activar</>
+                            }
+                          </button>
+                        )}
                         <button className="flex-shrink-0" style={{ background: 'transparent', border: 'none', color: 'var(--muted,#8a8aa0)', cursor: 'pointer', padding: 4, borderRadius: 6 }} title="Más opciones"><MoreVertical size={15} /></button>
                       </div>
                     </td>

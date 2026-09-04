@@ -1,8 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Spinner } from '../../components/ui';
 import FileUploadZone, { type UploadFile } from '../../components/ui/FileUploadZone';
 import { uploadsApi } from '../../api/uploads';
 import { aiApi } from '../../api/ai';
+import { campaignsApi, type MetaAccount } from '../../api/campaigns';
 import { generateCreativeImage } from '../../utils/creativeCanvas';
 import { editProductImage, generateProductImage } from '../../utils/openaiImageEdit';
 import { C } from '../../styles/theme';
@@ -88,11 +90,27 @@ interface AiStrategy {
 type Currency = 'USD' | 'ARS';
 type Gender = 'Todos' | 'Masculino' | 'Femenino';
 
+const OBJECTIVE_MAP: Record<string, 'whatsapp' | 'traffic' | 'leads' | 'conversions'> = {
+  'WhatsApp': 'whatsapp', 'Tráfico web': 'traffic', 'Conversiones': 'conversions', 'Reconocimiento de marca': 'traffic',
+};
+
 export default function NewCampaign() {
+  const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [analyzing, setAnalyzing] = useState(false);
   const [strategy, setStrategy] = useState<AiStrategy | null>(null);
   const [analyzeError, setAnalyzeError] = useState('');
+
+  // Publicación en Meta
+  const [metaAccounts, setMetaAccounts] = useState<MetaAccount[] | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState('');
+  const [published, setPublished] = useState(false);
+  useEffect(() => {
+    campaignsApi.getMetaAccounts()
+      .then(r => setMetaAccounts(((r.data as any)?.data ?? r.data ?? []) as MetaAccount[]))
+      .catch(() => setMetaAccounts([]));
+  }, []);
 
   // Step 1 form
   const [form, setForm] = useState({ name: '', price: '', desc: '', budget: '25', objective: 'WhatsApp' });
@@ -201,6 +219,36 @@ export default function NewCampaign() {
 
   const displayStrategy = strategy ?? {
     hook: '—', audience: { description: '—' }, format: '9_16', cta: '—', styleNotes: '—',
+  };
+
+  const account = metaAccounts?.[0];
+  const buildTargeting = () => {
+    const t: Record<string, any> = { age_min: ageMin, age_max: ageMax, geo_locations: { countries: ['AR'] } };
+    if (gender === 'Masculino') t.genders = [1];
+    else if (gender === 'Femenino') t.genders = [2];
+    return t;
+  };
+  const createAndPublish = async () => {
+    if (!account) { setPublishError('Conectá Meta Ads en Integraciones para poder publicar.'); return; }
+    setPublishing(true); setPublishError('');
+    try {
+      const budgetUsd = Math.max(1, Math.round(currency === 'ARS' ? (+form.budget || 0) / 1100 : (+form.budget || 0)) || 25);
+      const created = await campaignsApi.create({
+        name: form.name || 'Nueva campaña',
+        metaAccountId: account.id,
+        objective: OBJECTIVE_MAP[form.objective] ?? 'whatsapp',
+        dailyBudgetUsd: budgetUsd,
+        whatsappMessage: strategy?.whatsappMessage,
+        targeting: buildTargeting(),
+      });
+      const id = (created.data as any)?.data?.id ?? (created.data as any)?.id;
+      await campaignsApi.publish(id);
+      setPublished(true);
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || e?.response?.data?.error;
+      setPublishError(Array.isArray(msg) ? msg.join(', ') : (msg || 'No se pudo publicar en Meta. Revisá la conexión y los datos de la cuenta.'));
+    }
+    setPublishing(false);
   };
 
   const btnStyle = (active: boolean) => ({
@@ -510,9 +558,19 @@ export default function NewCampaign() {
         <div className="g2" style={{ gap: 16 }}>
           <div style={cardBig}>
             <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 17, marginBottom: 14 }}>Configuración final</div>
-            <div style={{ padding: '9px 12px', background: C.greenDim, borderRadius: 8, border: `1px solid ${C.green}33`, fontSize: 12, color: C.green, marginBottom: 13 }}>
-              ✅ Meta Ads conectado · WhatsApp vinculado
-            </div>
+            {metaAccounts === null ? (
+              <div style={{ padding: '9px 12px', background: C.surface2, borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12, color: C.textMuted, marginBottom: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Spinner size={12} /> Verificando conexión con Meta…
+              </div>
+            ) : account ? (
+              <div style={{ padding: '9px 12px', background: C.greenDim, borderRadius: 8, border: `1px solid ${C.green}33`, fontSize: 12, color: C.green, marginBottom: 13 }}>
+                ✅ Meta Ads conectado · <b>{account.name}</b>{account.whatsapp_number ? ' · WhatsApp vinculado' : ''}
+              </div>
+            ) : (
+              <div style={{ padding: '10px 12px', background: C.amberDim, borderRadius: 8, border: `1px solid ${C.amber}44`, fontSize: 12, color: C.amber, marginBottom: 13 }}>
+                ⚠️ No hay una cuenta de Meta conectada. <a href="/dashboard/integrations" style={{ color: C.amber, textDecoration: 'underline', fontWeight: 700 }}>Conectá Meta Ads</a> para poder publicar.
+              </div>
+            )}
             {[
               ['Campaña', form.name || 'Nueva campaña IA'],
               ['Presupuesto', `${form.budget} ${currency}/día`],
@@ -540,7 +598,22 @@ export default function NewCampaign() {
               </div>
               <div style={{ background: '#1a3a2a', borderRadius: '10px 10px 2px 10px', padding: '9px 11px', marginLeft: 'auto', maxWidth: '80%', lineHeight: 1.5 }}>¡Hola! Sí 🎉 ¿Cuál es tu talle?</div>
             </div>
-            <button className="btn btn-p" style={{ width: '100%', marginTop: 13, padding: '11px', fontSize: 14 }}>🚀 Publicar en Meta Ads</button>
+
+            {published ? (
+              <div style={{ marginTop: 13, padding: 14, background: C.greenDim, border: `1px solid ${C.green}44`, borderRadius: 10, textAlign: 'center' }}>
+                <div style={{ fontSize: 26 }}>🎉</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: C.green, margin: '4px 0 2px' }}>¡Campaña publicada en Meta!</div>
+                <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 12 }}>Ya está activa. Los leads de WhatsApp van a entrar automáticamente.</div>
+                <button className="btn btn-p" style={{ width: '100%', padding: '10px' }} onClick={() => navigate('/dashboard/campaigns')}>Ver mis campañas →</button>
+              </div>
+            ) : (
+              <>
+                {publishError && <div style={{ marginTop: 12, padding: '9px 12px', background: C.redDim, border: `1px solid ${C.red}`, borderRadius: 8, fontSize: 12, color: C.red }}>⚠️ {publishError}</div>}
+                <button className="btn btn-p" style={{ width: '100%', marginTop: 13, padding: '11px', fontSize: 14, opacity: publishing || !account ? 0.6 : 1 }} onClick={createAndPublish} disabled={publishing || !account}>
+                  {publishing ? <><Spinner size={14} color="#fff" /> Publicando en Meta…</> : '🚀 Publicar en Meta Ads'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -557,8 +630,12 @@ export default function NewCampaign() {
           <button className="btn btn-p" onClick={() => setStep(step + 1)} disabled={step === 2 && analyzing}>
             {analyzing ? <><Spinner size={14} color="#fff" /> Analizando...</> : 'Continuar →'}
           </button>
+        ) : published ? (
+          <button className="btn btn-p" style={{ background: C.green }} onClick={() => navigate('/dashboard/campaigns')}>Ver campañas →</button>
         ) : (
-          <button className="btn btn-p" style={{ background: C.green }}>✅ Publicar</button>
+          <button className="btn btn-p" style={{ background: C.green, opacity: publishing || !account ? 0.6 : 1 }} onClick={createAndPublish} disabled={publishing || !account}>
+            {publishing ? <><Spinner size={14} color="#fff" /> Publicando…</> : '🚀 Publicar en Meta'}
+          </button>
         )}
       </div>
     </div>
