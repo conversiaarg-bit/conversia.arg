@@ -48,7 +48,7 @@ export const creativeApi = {
   // Campaña UGC (agente planifica escenas → nodos)
   ugcPlan: (body: { product: ProductInfo; creatorKey?: string }) =>
     D<{ creator: string; scenes: UgcScene[] }>(api.post('/creative/ugc-campaign/plan', body, { timeout: 90_000 })),
-  ugcScene: (body: { product: ProductInfo; scene: UgcScene; referenceImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string }) =>
+  ugcScene: (body: { product: ProductInfo; scene: UgcScene; referenceImage?: string; avatarImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string }) =>
     D<{ imageUrl: string; videoUrl: string | null; videoPending?: boolean; sceneKey: string; credits: number; creditsUsed: number }>(api.post('/creative/ugc-campaign/scene', body, { timeout: 200_000, ...idem() })),
 
   tts: (text: string, voice?: string) => D<{ audioUrl: string }>(api.post('/creative/tts', { text, voice }, { timeout: 60_000 })),

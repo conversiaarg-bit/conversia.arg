@@ -236,19 +236,24 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
   }
 
   // Genera UNA escena de la campaña (imagen persona+producto → video Seedance)
-  async generateUGCScene(input: { product: ProductInfo; scene: { key: string; imagePrompt: string; videoPrompt: string; seconds?: number }; referenceImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string }) {
+  async generateUGCScene(input: { product: ProductInfo; scene: { key: string; imagePrompt: string; videoPrompt: string; seconds?: number }; referenceImage?: string; avatarImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string }) {
     const hasRef = !!input.referenceImage;
     const productLine = hasRef
       ? `The person is clearly holding and showing the EXACT product from the reference image — keep the product packaging, brand, logo, colors, text and shape IDENTICAL to the reference, fully visible, unchanged, well-lit and in sharp focus, correct proportions.`
       : `holding/using the product "${input.product.name}".`;
-    const personLine = input.avatarDesc?.trim()
-      ? `A person matching this description: ${input.avatarDesc.trim()} (fictional, not a real or identifiable person, not a celebrity).`
-      : `A fully fictional AI-generated person (not real, not a celebrity).`;
+    const personLine = input.avatarImage
+      ? `Use the SAME person shown in the reference (same face, hair, look) — keep the avatar consistent.`
+      : input.avatarDesc?.trim()
+        ? `A person matching this description: ${input.avatarDesc.trim()} (fictional, not a real or identifiable person, not a celebrity).`
+        : `A fully fictional AI-generated person (not real, not a celebrity).`;
     const { fragments, rest } = expandCommands(input.brief);
     const cmdLine = (fragments.length || rest) ? ` Commercial directives: ${[...fragments, rest].filter(Boolean).join('; ')}.` : '';
+    // Referencias: avatar (persona) primero + producto. gpt-image-1 las compone.
+    const refs = [input.avatarImage, input.referenceImage].filter(Boolean) as string[];
     const img = await this.imageProvider.generate({
       prompt: `${input.scene.imagePrompt}. Vertical smartphone UGC photo. ${personLine} ${productLine}${cmdLine} Natural lighting, no watermark, no text overlay.`,
-      format: input.format ?? '9:16', quality: input.quality ?? 'standard', referenceImage: input.referenceImage,
+      format: input.format ?? '9:16', quality: input.quality ?? 'standard',
+      referenceImage: refs[0], referenceImages: refs.length > 1 ? refs : undefined,
     });
     const imageUrl = await this.persist(img.dataUrl, 'image');
 

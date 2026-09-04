@@ -23,6 +23,17 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
   const [cmd, setCmd] = useState('');   // estilo/comandos "/x" aplicados a todas las escenas
   const [avatar, setAvatar] = useState('');  // descripción del avatar/persona
   const [hd, setHd] = useState(false);  // Producto exacto (alta fidelidad, cuesta más)
+  // Galería de Plantillas / Avatares
+  const [selectedAvatar, setSelectedAvatar] = useState<string | undefined>();
+  const [avatarLib, setAvatarLib] = useState<string[]>([]);
+  const [uploadedAvatars, setUploadedAvatars] = useState<string[]>([]);
+  const [showAvatars, setShowAvatars] = useState(false);
+  const avatarFileRef = useRef<HTMLInputElement>(null);
+  const loadAvatars = () => creativeApi.list().then((items: any[]) => {
+    const imgs = (items || []).filter(it => it.output_url && !it.video_url).map(it => it.output_url);
+    setAvatarLib(imgs.slice(0, 60));
+  }).catch(() => {});
+  const uploadAvatar = async (f: File) => { const b64 = await toBase64(f); setUploadedAvatars(l => [b64, ...l]); setSelectedAvatar(b64); };
   const [imageBase64, setImageBase64] = useState<string | undefined>();
   const [format] = useState<Fmt>('9:16');
   const [plan, setPlan] = useState<{ creator: string; scenes: UgcScene[] } | null>(null);
@@ -37,6 +48,7 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
   const [creatorKey, setCreatorKey] = useState<string | undefined>();
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>();
   useEffect(() => { workspaceApi.getBrand().then(b => { setCreatorKey(b?.data?.preferredCreator); setAvatarUrl(b?.data?.avatarUrl); }).catch(() => {}); }, []);
+  useEffect(() => { loadAvatars(); }, [running]); // recarga la galería al montar y al terminar de generar // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Copiloto (chat que planifica y ejecuta) ────────────────────────────────
   const [messages, setMessages] = useState<{ role: 'user' | 'copilot'; text: string }[]>([
@@ -90,7 +102,7 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
       const scene = plan.scenes[i];
       setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
       try {
-        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar });
+        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar });
         setCredits(res.credits);
         if (res.videoUrl) anyVideo = true;
         setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
@@ -148,7 +160,7 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
     setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
     pushMsg('copilot', `Generando la escena ${i + 1} (${scene.title})…`);
     try {
-      const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar });
+      const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar });
       setCredits(res.credits);
       setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
       pushMsg('copilot', `✓ Escena ${i + 1} lista.`);
@@ -288,9 +300,13 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
         ))}
       </div>
 
-      {/* Avatar (describir) + Producto exacto (HD) */}
+      {/* Avatar (galería + describir) + Producto exacto (HD) */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-        <input value={avatar} onChange={e => setAvatar(e.target.value)} placeholder="Avatar (opcional): ej. mujer joven, pelo castaño, sonriente…" title="Describí cómo querés la persona/avatar de las escenas" style={{ flex: 1, minWidth: 220, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '9px 12px', color: C.text, fontSize: 12.5, outline: 'none' }} />
+        <button onClick={() => { loadAvatars(); setShowAvatars(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8, background: selectedAvatar ? C.accentDim : C.surface, border: `1px solid ${selectedAvatar ? C.accent : C.border}`, borderRadius: 10, padding: '6px 12px', color: C.text, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+          {selectedAvatar ? <img src={selectedAvatar} alt="" style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }} /> : <span style={{ fontSize: 15 }}>🧑</span>}
+          {selectedAvatar ? 'Avatar elegido' : 'Plantillas / Avatares'}
+        </button>
+        <input value={avatar} onChange={e => setAvatar(e.target.value)} placeholder="Avatar (opcional): ej. mujer joven, pelo castaño, sonriente…" title="Describí cómo querés la persona/avatar de las escenas" style={{ flex: 1, minWidth: 200, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '9px 12px', color: C.text, fontSize: 12.5, outline: 'none' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.surface, border: `1px solid ${hd ? C.accent : C.border}`, borderRadius: 10, padding: '6px 10px' }}>
           <span style={{ fontSize: 12, color: C.textMuted }}>Producto exacto:</span>
           <button onClick={() => setHd(false)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: !hd ? C.accentDim : 'transparent', color: !hd ? C.accent : C.textMuted }}>Económico</button>
@@ -330,6 +346,39 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
         </div>
         <CopilotPanel messages={messages} running={running || planning} planned={!!plan} onGenerate={runAll} onSend={handleCopilot} onAttach={onCopilotAttach} />
       </div>
+
+      {/* Galería de Plantillas / Avatares */}
+      {showAvatars && (() => {
+        const all = [...uploadedAvatars, ...avatarLib];
+        return (
+          <div onClick={() => setShowAvatars(false)} style={{ position: 'fixed', inset: 0, background: '#000a', zIndex: 100, display: 'grid', placeItems: 'center', padding: 20 }}>
+            <div onClick={e => e.stopPropagation()} style={{ width: 'min(880px,95vw)', maxHeight: '85vh', overflowY: 'auto', background: '#0f0f1a', border: `1px solid ${C.borderBright}`, borderRadius: 16, padding: 22 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 18 }}>🧑 Plantillas / Avatares</div>
+                <button onClick={() => avatarFileRef.current?.click()} className="btn btn-p" style={{ fontSize: 12, padding: '6px 12px' }}>⬆ Subir avatar</button>
+                <input ref={avatarFileRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) uploadAvatar(f); e.currentTarget.value = ''; }} />
+                <button onClick={() => setShowAvatars(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: C.textMuted, fontSize: 18, cursor: 'pointer' }}>✕</button>
+              </div>
+              <div style={{ fontSize: 12.5, color: C.textMuted, marginBottom: 14 }}>Elegí un avatar para usar en las escenas (se mantiene la MISMA persona). Se van sumando los que generás. Después solo cambiás la imagen del producto y ejecutás.</div>
+              {selectedAvatar && <button onClick={() => setSelectedAvatar(undefined)} style={{ marginBottom: 12, background: 'transparent', border: `1px solid ${C.red}`, color: C.red, borderRadius: 8, padding: '5px 11px', fontSize: 12, cursor: 'pointer' }}>Quitar avatar (usar persona automática)</button>}
+              {all.length === 0 ? (
+                <div style={{ padding: '40px 0', textAlign: 'center', color: C.textMuted }}><div style={{ fontSize: 30 }}>🧑</div>Todavía no hay avatares. Generá una campaña (se guardan solos) o subí uno.</div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(130px,1fr))', gap: 12 }}>
+                  {all.map((url, i) => {
+                    const sel = selectedAvatar === url;
+                    return (
+                      <button key={i} onClick={() => { setSelectedAvatar(url); setShowAvatars(false); }} style={{ padding: 0, border: `2px solid ${sel ? C.accent : C.border}`, borderRadius: 12, overflow: 'hidden', cursor: 'pointer', background: C.surface, aspectRatio: '3/4' }}>
+                        <img src={url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
