@@ -16,6 +16,16 @@ const GROUPS: { key: GroupKey; label: string; color: string }[] = [
 ];
 const EDGE = '#2ee6c4'; // teal de los conectores
 
+// Descargar la media de un nodo (imagen o video) como archivo
+async function dlNode(url: string, name: string) {
+  try {
+    const r = await fetch(url); const b = await r.blob();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b);
+    a.download = name + (b.type.includes('video') ? '.mp4' : '.png');
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+  } catch { window.open(url, '_blank'); }
+}
+
 // Canvas de flujo estilo pipeline: Entrada → Generación → Salida.
 // Cada nodo lleva su modelo de IA en el header; nodos de texto o de media; Copiloto externo.
 export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCost, onAddScene, onDeleteScene, finalVideoUrl, assembling, onAssemble, productImage, productName, onCancel }: {
@@ -188,6 +198,9 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
           </div>
           {sel.media && <video src={sel.media} controls loop style={{ width: '100%', borderRadius: 10, marginBottom: 12, background: C.surface2 }} />}
           {sel.poster && !sel.media && <img src={sel.poster} alt="" style={{ width: '100%', borderRadius: 10, marginBottom: 12 }} />}
+          {(sel.media || sel.poster) && (
+            <button onClick={() => dlNode((sel.media || sel.poster)!, `escena-${sel.id}`)} style={{ width: '100%', marginBottom: 12, background: C.accent, color: '#fff', border: 'none', borderRadius: 9, padding: '9px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>⬇ Descargar {sel.media ? 'video' : 'imagen'}</button>
+          )}
           {sel.scene ? (
             <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.6 }}>
               <p style={{ margin: '0 0 8px' }}><b style={{ color: C.text }}>Guion:</b> {sel.scene.script || '—'}</p>

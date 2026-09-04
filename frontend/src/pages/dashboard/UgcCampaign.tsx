@@ -113,6 +113,16 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
   const [saved, setSaved] = useState(false);
   const viewPlan = plan ?? { creator: 'Tu creador IA', scenes: SKELETON };
 
+  // Comandos recomendados según el producto (heurística, sin costo)
+  const recCmds = (() => {
+    const t = (name || '').toLowerCase();
+    const c = new Set<string>(['/product', '/ad', '/appetite', '/studio', '/closeup']);
+    if (/premium|luxury|elegante/.test(t)) ['/premium', '/dramatic'].forEach(x => c.add(x));
+    if (/snack|papa|chip|comida|food|bebida|dulce|galle|pizza|hamburg|caf/.test(t)) ['/delicious', '/fresh', '/crispy'].forEach(x => c.add(x));
+    c.add('/hyperreal'); c.add('/scroll-stopping');
+    return [...c].slice(0, 9);
+  })();
+
   const materialize = (p: typeof plan) => p ?? { creator: 'Tu creador IA', scenes: SKELETON.map(s => ({ ...s })) };
   const addScene = (title?: string) => {
     const key = `extra_${Date.now()}`;
@@ -265,6 +275,15 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
         <input value={cmd} onChange={e => setCmd(e.target.value)} title="Estilo o comandos /x que se aplican a TODAS las escenas (ej: /ad /appetite /studio)" placeholder="Estilo / comandos: /ad /appetite /studio…" style={{ width: 230, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 13, outline: 'none' }} />
         <Btn onClick={() => startCampaign()} disabled={planning || (!name && !imageBase64)}>{planning ? 'Planeando…' : plan ? 'Replanificar' : '🤖 Planificar'}</Btn>
         {doneCount > 0 && <button onClick={saveProject} style={{ padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text }}>{saved ? '✓ Guardado' : '💾 Guardar'}</button>}
+      </div>
+
+      {/* Comandos recomendados según el producto (se aplican a todas las escenas) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 12 }}>
+        <span style={{ fontSize: 11, color: C.textMuted }}>✨ Comandos recomendados:</span>
+        <button onClick={() => setCmd(recCmds.join(' '))} style={{ fontSize: 11, fontWeight: 700, color: C.accent, background: C.accentDim, border: `1px solid ${C.accent}55`, borderRadius: 7, padding: '3px 10px', cursor: 'pointer' }}>Aplicar todos</button>
+        {recCmds.map(cmd2 => (
+          <button key={cmd2} onClick={() => setCmd((cmd.trim() + ' ' + cmd2).trim())} style={{ fontSize: 10.5, fontFamily: "'DM Mono',monospace", color: C.accent, background: C.accentDim, border: `1px solid ${C.accent}44`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>{cmd2}</button>
+        ))}
       </div>
 
       {askDur && (
