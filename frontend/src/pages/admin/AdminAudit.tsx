@@ -47,7 +47,7 @@ export default function AdminAudit() {
           <div className="sec-title">Audit Log</div>
           <div className="sec-sub">Registro de todas las acciones administrativas</div>
         </div>
-        <Tag t="tg">{MOCK_AUDIT.length} entradas</Tag>
+        <Tag t="tg">{items.length} entradas</Tag>
       </div>
 
       <div style={{ marginBottom: 16 }}>
