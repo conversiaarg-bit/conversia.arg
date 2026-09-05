@@ -474,16 +474,14 @@ export default function DashOverview() {
               <Zap size={13} className="text-accent" />
               <span className="text-[11px] text-muted font-mono uppercase tracking-wider">Actividad reciente</span>
             </div>
-            {[
-              { dot: '#00d68f', text: 'Gaming Carrusel superó ROAS 5x',     time: 'hace 2 min' },
-              { dot: '#7c5cfc', text: '12 nuevos leads en Nike Air Reels',   time: 'hace 18 min' },
-              { dot: '#4da6ff', text: 'Creativo nuevo generado con IA',      time: 'hace 1h' },
-            ].map((a, i) => (
-              <div key={i} className="act-item">
-                <div className="act-dot mt-1.5 flex-shrink-0" style={{ background: a.dot }} />
+            {thumbs.length === 0 ? (
+              <div className="text-[12px] text-muted" style={{ padding: '6px 0' }}>Sin actividad reciente todavía.</div>
+            ) : thumbs.slice(0, 3).map((t: any, i: number) => (
+              <div key={t.id ?? i} className="act-item">
+                <div className="act-dot mt-1.5 flex-shrink-0" style={{ background: '#4da6ff' }} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] text-text leading-tight">{a.text}</div>
-                  <div className="text-[10px] text-muted mt-0.5 font-mono">{a.time}</div>
+                  <div className="text-[12px] text-text leading-tight" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name || 'Creativo generado con IA'}</div>
+                  <div className="text-[10px] text-muted mt-0.5 font-mono">{t.created_at ? new Date(t.created_at).toLocaleDateString('es-AR') : ''}</div>
                 </div>
               </div>
             ))}

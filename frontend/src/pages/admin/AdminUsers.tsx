@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Tag, Confirm, Modal } from '../../components/ui';
 import { C } from '../../styles/theme';
+import { adminApi } from '../../api/admin';
 
 interface User {
   id: string; name: string; email: string; role: string; status: string;
@@ -12,17 +13,24 @@ const ROLE_COLORS: Record<string, 'tr' | 'tp' | 'tb' | 'tg' | 'ta'> = { admin: '
 const STATUS_COLORS: Record<string, 'tg' | 'ta' | 'tr' | 'tb'> = { active: 'tg', suspended: 'ta', blocked: 'tr', pending_verification: 'tb' };
 const STATUS_LABELS: Record<string, string> = { active: 'Activo', suspended: 'Suspendido', blocked: 'Bloqueado', pending_verification: 'Sin verificar' };
 
-const MOCK_USERS: User[] = [
-  { id: 'u1', name: 'María González', email: 'maria@ejemplo.com', role: 'client', status: 'active', plan: 'growth', planPrice: 99, campaigns: 8, leads: 342, lastLogin: 'Hace 2h', created: '12/01/2026' },
-  { id: 'u2', name: 'Carlos Romero', email: 'carlos@ejemplo.com', role: 'client', status: 'active', plan: 'scale', planPrice: 199, campaigns: 24, leads: 1240, lastLogin: 'Hace 15min', created: '05/01/2026' },
-  { id: 'u3', name: 'Laura Martínez', email: 'laura@ejemplo.com', role: 'client', status: 'suspended', plan: 'starter', planPrice: 49, campaigns: 2, leads: 18, lastLogin: 'Hace 5 días', created: '20/02/2026' },
-  { id: 'u4', name: 'Diego Fernández', email: 'diego@ejemplo.com', role: 'client', status: 'active', plan: 'growth', planPrice: 99, campaigns: 11, leads: 521, lastLogin: 'Ayer', created: '10/03/2026' },
-  { id: 'u5', name: 'Equipo Soporte', email: 'soporte@aicommerceads.com', role: 'support', status: 'active', plan: 'scale', planPrice: 199, campaigns: 0, leads: 0, lastLogin: 'Hace 1h', created: '01/01/2026' },
-  { id: 'u6', name: 'Valentina López', email: 'vale@ejemplo.com', role: 'client', status: 'active', plan: 'starter', planPrice: 49, campaigns: 3, leads: 87, lastLogin: 'Hace 3 días', created: '14/03/2026' },
-];
+const PLAN_PRICE: Record<string, number> = { starter: 49, growth: 99, scale: 199 };
+const mapUser = (u: any): User => ({
+  id: u.id, name: u.full_name || u.email || '—', email: u.email || '', role: u.role || 'client',
+  status: u.status || 'active', plan: u.plan || u.plan_name || '—', planPrice: PLAN_PRICE[u.plan || u.plan_name] ?? 0,
+  campaigns: +(u.campaigns ?? 0), leads: +(u.leads ?? 0),
+  lastLogin: u.last_login_at ? new Date(u.last_login_at).toLocaleDateString('es-AR') : '—',
+  created: u.created_at ? new Date(u.created_at).toLocaleDateString('es-AR') : '—',
+});
 
 export default function AdminUsers() {
-  const [users, setUsers] = useState(MOCK_USERS);
+  const [users, setUsers] = useState<User[]>([]);
+  const load = useCallback(() => {
+    adminApi.users({ limit: 100 }).then((r: any) => {
+      const list = r?.users ?? r ?? [];
+      setUsers(Array.isArray(list) ? list.map(mapUser) : []);
+    }).catch(() => setUsers([]));
+  }, []);
+  useEffect(() => { load(); }, [load]);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -38,17 +46,16 @@ export default function AdminUsers() {
     (!statusFilter || u.status === statusFilter)
   );
 
-  const doAction = (userId: string, action: string, extra?: string) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id !== userId) return u;
-      if (action === 'activate') return { ...u, status: 'active' };
-      if (action === 'suspend') return { ...u, status: 'suspended' };
-      if (action === 'block') return { ...u, status: 'blocked' };
-      if (action === 'plan') return { ...u, plan: extra!, planPrice: extra === 'starter' ? 49 : extra === 'growth' ? 99 : 199 };
-      return u;
-    }));
+  const doAction = async (userId: string, action: string, extra?: string) => {
+    try {
+      if (action === 'activate') await adminApi.activateUser(userId);
+      else if (action === 'suspend') await adminApi.suspendUser(userId);
+      else if (action === 'block') await adminApi.blockUser(userId);
+      else if (action === 'plan') await adminApi.updateUser(userId, { planName: extra });
+      load();
+      showToast(`Acción ejecutada: ${action}`);
+    } catch { showToast('No se pudo ejecutar la acción'); }
     setSelected(null);
-    showToast(`Acción ejecutada: ${action}`);
   };
 
   return (

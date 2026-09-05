@@ -1,17 +1,22 @@
+import { useEffect, useState } from 'react';
 import { Tag } from '../../components/ui';
 import { C } from '../../styles/theme';
+import { adminApi } from '../../api/admin';
 
-const USERS = [
-  { id: 'u1', name: 'María González', email: 'maria@ejemplo.com', plan: 'growth', planPrice: 99, status: 'active', nextBilling: '01/06/2026', since: 'Enero 2026' },
-  { id: 'u2', name: 'Carlos Romero', email: 'carlos@ejemplo.com', plan: 'scale', planPrice: 199, status: 'active', nextBilling: '01/06/2026', since: 'Enero 2026' },
-  { id: 'u3', name: 'Laura Martínez', email: 'laura@ejemplo.com', plan: 'starter', planPrice: 49, status: 'suspended', nextBilling: '—', since: 'Febrero 2026' },
-  { id: 'u4', name: 'Diego Fernández', email: 'diego@ejemplo.com', plan: 'growth', planPrice: 99, status: 'active', nextBilling: '01/06/2026', since: 'Marzo 2026' },
-  { id: 'u5', name: 'Valentina López', email: 'vale@ejemplo.com', plan: 'starter', planPrice: 49, status: 'active', nextBilling: '01/06/2026', since: 'Marzo 2026' },
-];
-
-const MRR = USERS.filter(u => u.status === 'active').reduce((sum, u) => sum + u.planPrice, 0);
+const PLAN_PRICE: Record<string, number> = { starter: 49, growth: 99, scale: 199 };
 
 export default function AdminBilling() {
+  const [USERS, setUsers] = useState<any[]>([]);
+  useEffect(() => {
+    adminApi.users({ limit: 200 }).then((r: any) => {
+      const list = (r?.users ?? r ?? []) as any[];
+      setUsers((Array.isArray(list) ? list : []).map(u => {
+        const plan = u.plan || u.plan_name || '—';
+        return { id: u.id, name: u.full_name || u.email || '—', email: u.email || '', plan, planPrice: PLAN_PRICE[plan] ?? 0, status: u.status || 'active', nextBilling: '—', since: u.created_at ? new Date(u.created_at).toLocaleDateString('es-AR') : '—' };
+      }));
+    }).catch(() => setUsers([]));
+  }, []);
+  const MRR = USERS.filter(u => u.status === 'active').reduce((sum, u) => sum + u.planPrice, 0);
   return (
     <div className="page fa">
       <div className="sec-head" style={{ marginBottom: 20 }}>

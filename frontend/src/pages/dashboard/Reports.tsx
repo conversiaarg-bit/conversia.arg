@@ -139,12 +139,7 @@ export default function Reports() {
       ? aiInsights.map(ins => ({ i: INSIGHT_TYPE_ICON[ins.type] ?? '💡', t: ins.title, detail: ins.detail, x: INSIGHT_TYPE_TAG[ins.type] ?? 'tb' }))
       : latestInsights.length > 0
       ? latestInsights.map((ins: any) => ({ i: INSIGHT_TYPE_ICON[ins.type] ?? '💡', t: ins.title, detail: ins.detail ?? ins.action, x: INSIGHT_TYPE_TAG[ins.type] ?? 'tb' }))
-      : [
-          { i: '✅', t: 'Gaming Carrusel ROAS 5.8x',        detail: 'Subir presupuesto a $60/día',         x: 'tg' as const },
-          { i: '⚠️', t: 'Ropa Invierno CTR 1.9%',           detail: 'Reformular hook o pausar campaña',    x: 'ta' as const },
-          { i: '🚀', t: 'Reels generan 60% más leads',       detail: 'vs carruseles en el mismo período',   x: 'tb' as const },
-          { i: '💬', t: '342 leads WA esta semana',           detail: '+28% vs semana anterior',             x: 'tg' as const },
-        ];
+      : [] as { i: string; t: string; detail: string; x: 'tg' | 'ta' | 'tb' }[];
 
   const campaignRows = latestReport?.summary
     ? MOCK_CAMPAIGNS.map((c, i) => ({

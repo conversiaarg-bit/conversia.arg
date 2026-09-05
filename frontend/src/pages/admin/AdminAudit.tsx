@@ -1,17 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Tag } from '../../components/ui';
 import { C } from '../../styles/theme';
+import { adminApi } from '../../api/admin';
 
-const MOCK_AUDIT = [
-  { id: 'a1', user: 'Alan Ugarte', action: 'admin.update_plan_price', entity: 'plan', detail: 'starter → $59/mes', time: 'Hace 5min', ip: '192.168.1.1' },
-  { id: 'a2', user: 'Alan Ugarte', action: 'admin.suspend_user', entity: 'user', detail: 'Laura Martínez', time: 'Hace 1h', ip: '192.168.1.1' },
-  { id: 'a3', user: 'Alan Ugarte', action: 'admin.create_user', entity: 'user', detail: 'Equipo Soporte', time: 'Hace 3h', ip: '192.168.1.1' },
-  { id: 'a4', user: 'María González', action: 'campaigns.publish', entity: 'campaign', detail: 'Nike Air - Reels', time: 'Hace 4h', ip: '200.10.5.22' },
-  { id: 'a5', user: 'Alan Ugarte', action: 'admin.toggle_feature', entity: 'feature_flag', detail: 'api_access → false', time: 'Ayer 18:32', ip: '192.168.1.1' },
-  { id: 'a6', user: 'Carlos Romero', action: 'campaigns.create', entity: 'campaign', detail: 'Gaming Carrusel', time: 'Ayer 14:15', ip: '181.24.8.90' },
-  { id: 'a7', user: 'Alan Ugarte', action: 'admin.impersonate', entity: 'user', detail: 'Diego Fernández', time: 'Hace 2 días', ip: '192.168.1.1' },
-  { id: 'a8', user: 'Alan Ugarte', action: 'admin.send_announcement', entity: 'announcement', detail: "'Nuevas funciones de IA'", time: 'Hace 3 días', ip: '192.168.1.1' },
-];
+const timeAgo = (iso: string) => {
+  if (!iso) return '';
+  const d = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (d < 60) return 'recién';
+  if (d < 3600) return `hace ${Math.floor(d / 60)}min`;
+  if (d < 86400) return `hace ${Math.floor(d / 3600)}h`;
+  return new Date(iso).toLocaleDateString('es-AR');
+};
+const mapAudit = (a: any) => ({
+  id: a.id, user: a.full_name || a.email || 'sistema', action: a.action || '', entity: a.entity || '',
+  detail: a.entity_id || (a.meta && typeof a.meta === 'object' ? Object.values(a.meta).join(' · ') : '') || '',
+  time: timeAgo(a.created_at), ip: a.ip_address || a.ip || '—',
+});
 
 function actionColor(action: string) {
   if (action.includes('suspend') || action.includes('block')) return C.red;
@@ -29,9 +33,11 @@ function actionTag(action: string): 'tr' | 'tg' | 'ta' | 'tp' {
 
 export default function AdminAudit() {
   const [search, setSearch] = useState('');
+  const [items, setItems] = useState<ReturnType<typeof mapAudit>[]>([]);
+  useEffect(() => { adminApi.audit({ limit: 100 }).then(a => setItems((Array.isArray(a) ? a : []).map(mapAudit))).catch(() => setItems([])); }, []);
 
-  const filtered = MOCK_AUDIT.filter(a =>
-    !search || a.user.toLowerCase().includes(search.toLowerCase()) || a.action.toLowerCase().includes(search.toLowerCase()) || a.detail.toLowerCase().includes(search.toLowerCase())
+  const filtered = items.filter(a =>
+    !search || a.user.toLowerCase().includes(search.toLowerCase()) || a.action.toLowerCase().includes(search.toLowerCase()) || (a.detail || '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
