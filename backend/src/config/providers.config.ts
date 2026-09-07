@@ -10,5 +10,9 @@ export const PROVIDERS = {
     apiKey: process.env.SEEDANCE_API_KEY ?? '',
     apiUrl: process.env.SEEDANCE_API_URL ?? 'https://fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
     model:  process.env.SEEDANCE_VIDEO_MODEL ?? 'seedance-1.5-pro',
+    // Costo depende de estos dos. Default = 720p sin audio (el mas barato).
+    // Cambiar por env sin tocar codigo: SEEDANCE_RESOLUTION=1080p | 720p | 480p, SEEDANCE_AUDIO=true|false
+    resolution: process.env.SEEDANCE_RESOLUTION ?? '720p',
+    audio: process.env.SEEDANCE_AUDIO === 'true',   // OJO: fal default es true (paga el doble); aca default false
   },
 } as const;

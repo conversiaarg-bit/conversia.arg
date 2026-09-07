@@ -5,7 +5,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreativeService, ProductInfo } from './creative.service';
 import { CreditsService } from '../credits/credits.service';
 import { CostTrackingService } from '../credits/cost-tracking.service';
-import { CREDIT_COSTS, estimateProviderCost, CreditOperation } from '../config/credits.config';
+import { CREDIT_COSTS, estimateProviderCost, CreditOperation, videoCredits, videoProviderCost, videoQuality, VIDEO_QUALITY } from '../config/credits.config';
 import { PROVIDERS } from '../config/providers.config';
 import { CREATOR_PRESETS } from './creators.config';
 import { Fmt } from './openai.service';
@@ -24,6 +24,7 @@ export class CreativeController {
   // Wrapper reserva → genera → consume/release + cost tracking (créditos seguros)
   private async billed<T>(req: any, opts: {
     operation: CreditOperation; amount: number; provider: string; model: string; seconds?: number;
+    providerCostUsd?: number; resolution?: string;
   }, fn: () => Promise<T>): Promise<{ result: T; credits: number; creditsUsed: number }> {
     // 🔒 Candado duro de gasto: si el gasto real de IA del mes superó el tope, se bloquea.
     const cap = Number(process.env.MAX_AI_SPEND_MONTH_USD ?? 15);
@@ -43,8 +44,8 @@ export class CreativeController {
       await this.credits.consume(txId);
       await this.cost.log({
         userId: req.user.id, provider: opts.provider, model: opts.model, operation: opts.operation,
-        durationSecs: opts.seconds, resolution: opts.seconds ? '1080p' : undefined,
-        estimatedProviderCostUsd: estimateProviderCost(opts.operation, opts.seconds),
+        durationSecs: opts.seconds, resolution: opts.resolution ?? (opts.seconds ? '1080p' : undefined),
+        estimatedProviderCostUsd: opts.providerCostUsd ?? estimateProviderCost(opts.operation, opts.seconds),
         creditsReserved: opts.amount, creditsConsumed: opts.amount, status: 'completed',
       });
       return { result, credits: await this.credits.balance(req.user.id), creditsUsed: req.user.role === 'admin' ? 0 : opts.amount };
@@ -67,7 +68,14 @@ export class CreativeController {
   }
 
   @Get('costs')
-  async costs(@Request() req: any) { return { costs: CREDIT_COSTS, credits: await this.credits.balance(req.user.id) }; }
+  async costs(@Request() req: any) {
+    // Opciones de calidad de video con su costo en créditos (para el selector de la UI)
+    const videoQualities = Object.entries(VIDEO_QUALITY).map(([key, v]) => ({
+      key, label: v.label, resolution: v.resolution, audio: v.audio,
+      credits5: videoCredits(key, 5), credits10: videoCredits(key, 10),
+    }));
+    return { costs: CREDIT_COSTS, videoQualities, credits: await this.credits.balance(req.user.id) };
+  }
 
   // PASO 1 (gratis)
   @Post('analyze') @HttpCode(HttpStatus.OK)
@@ -111,11 +119,13 @@ export class CreativeController {
   // PASO 5 — video
   @Post('video') @HttpCode(HttpStatus.OK)
   @Throttle({ medium: { limit: 10, ttl: 60000 } })
-  async video(@Body() body: { imageBase64: string; product: ProductInfo; style: string; duration: '5' | '10' }, @Request() req: any) {
+  async video(@Body() body: { imageBase64: string; product: ProductInfo; style: string; duration: '5' | '10'; videoQuality?: string }, @Request() req: any) {
     await this.assertFree(req, 'video');
     const seconds = body.duration === '10' ? 10 : 5;
     const op: CreditOperation = seconds === 10 ? 'video_10' : 'video_5';
-    const { result, credits, creditsUsed } = await this.billed(req, { operation: op, amount: CREDIT_COSTS[op], provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds },
+    const q = VIDEO_QUALITY[videoQuality(body.videoQuality)];
+    const { result, credits, creditsUsed } = await this.billed(req,
+      { operation: op, amount: videoCredits(body.videoQuality, seconds), provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds, providerCostUsd: videoProviderCost(body.videoQuality, seconds), resolution: q.resolution },
       () => this.svc.generateVideo(body));
     const r = result as any;
     this.svc.saveCreative(req.user.id, {
@@ -150,8 +160,9 @@ export class CreativeController {
   @Throttle({ medium: { limit: 8, ttl: 60000 } })
   async ugc(@Body() body: any, @Request() req: any) {
     await this.assertFree(req, 'video');
+    const qU = VIDEO_QUALITY[videoQuality(body.videoQuality)];
     const { result, credits, creditsUsed } = await this.billed(req,
-      { operation: 'ugc_video_10', amount: CREDIT_COSTS.ugc_video_10, provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds: 10 },
+      { operation: 'ugc_video_10', amount: videoCredits(body.videoQuality, 10), provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds: 10, providerCostUsd: videoProviderCost(body.videoQuality, 10), resolution: qU.resolution },
       () => this.svc.generateUGC(body));
     return { ...(result as any), credits, creditsUsed };
   }
@@ -173,8 +184,10 @@ export class CreativeController {
     const hasVideo = this.svc.videoAvailable;
     await this.assertFree(req, hasVideo ? 'video' : 'image');
     const imgOp: CreditOperation = body?.quality === 'premium' ? 'image_premium' : 'image_standard';
+    const vSecs = (body?.scene?.seconds ?? 8) >= 9 ? 10 : 5;
+    const qS = VIDEO_QUALITY[videoQuality(body?.videoQuality)];
     const billing = hasVideo
-      ? { operation: 'ugc_video_10' as CreditOperation, amount: CREDIT_COSTS.ugc_video_10, provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds: 10 }
+      ? { operation: 'ugc_video_10' as CreditOperation, amount: videoCredits(body?.videoQuality, vSecs), provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds: vSecs, providerCostUsd: videoProviderCost(body?.videoQuality, vSecs), resolution: qS.resolution }
       : { operation: imgOp, amount: CREDIT_COSTS[imgOp], provider: PROVIDERS.image, model: PROVIDERS.openaiImageModel };
     const { result, credits, creditsUsed } = await this.billed(req, billing, () => this.svc.generateUGCScene(body));
     // Auto-guardar la escena en el historial para que NO se pierda (fire-and-forget)

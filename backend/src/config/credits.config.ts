@@ -21,6 +21,32 @@ export const CREDIT_COSTS = {
 
 export type CreditOperation = keyof typeof CREDIT_COSTS;
 
+// Costo real de referencia por crédito (créditos = ceil(costoUSD / esto)).
+const REAL_COST_PER_CREDIT = n(process.env.REAL_COST_PER_CREDIT, 0.05);
+
+// ── Calidad de video (elegible al generar) ───────────────────────────────────
+// Seedance 1.5 Pro cobra por "tokens de video": (alto×ancho×fps×seg)/1024.
+// $1.2/millón sin audio, $2.4/millón con audio (fps=24). usdPerSec ya calculado.
+export const VIDEO_QUALITY = {
+  economico: { resolution: '720p',  audio: false, usdPerSec: 0.026, label: '720p · sin audio' },
+  hd:        { resolution: '1080p', audio: false, usdPerSec: 0.059, label: '1080p · sin audio' },
+  hd_audio:  { resolution: '1080p', audio: true,  usdPerSec: 0.117, label: '1080p · con audio' },
+} as const;
+export type VideoQuality = keyof typeof VIDEO_QUALITY;
+export const DEFAULT_VIDEO_QUALITY: VideoQuality = (process.env.VIDEO_QUALITY_DEFAULT as VideoQuality) || 'economico';
+
+export function videoQuality(q?: string): VideoQuality {
+  return q && q in VIDEO_QUALITY ? (q as VideoQuality) : DEFAULT_VIDEO_QUALITY;
+}
+// Créditos que cuesta un video segun calidad + duración (proporcional al costo real).
+export function videoCredits(q: string | undefined, seconds: number): number {
+  const p = VIDEO_QUALITY[videoQuality(q)];
+  return Math.max(1, Math.ceil((p.usdPerSec * seconds) / REAL_COST_PER_CREDIT));
+}
+export function videoProviderCost(q: string | undefined, seconds: number): number {
+  return +(VIDEO_QUALITY[videoQuality(q)].usdPerSec * seconds).toFixed(4);
+}
+
 // Precio de proveedor en USD (lista oficial). Ajustable por env a la factura real de cada proveedor.
 // Al generar con las keys, el costo REAL registrado = estos precios × uso real (segundos/cantidad).
 export const PROVIDER_COSTS_USD = {

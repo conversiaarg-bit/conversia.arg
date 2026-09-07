@@ -18,7 +18,12 @@ export class SeedanceVideoProvider implements VideoProvider {
     if (!apiKey) throw new Error('SEEDANCE_API_KEY no configurado.');
 
     const image_url = input.image; // fal acepta URL pública o data URI
-    const body = { image_url, prompt: input.prompt, duration: String(input.duration), resolution: input.resolution ?? '1080p' };
+    // generate_audio: fal default es TRUE (paga el doble). Respetamos lo que pida el input (default false).
+    const body = {
+      image_url, prompt: input.prompt, duration: String(input.duration),
+      resolution: input.resolution ?? PROVIDERS.seedance.resolution,
+      generate_audio: input.audio ?? PROVIDERS.seedance.audio,
+    };
     const headers = { Authorization: `Key ${apiKey}`, 'Content-Type': 'application/json' };
 
     this.logger.log(`[Seedance] ${model} — i2v ${input.duration}s`);

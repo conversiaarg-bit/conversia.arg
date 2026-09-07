@@ -6,6 +6,7 @@ import { OpenaiService, Fmt } from './openai.service';
 import { IMAGE_PROVIDER, VIDEO_PROVIDER, ImageProvider, VideoProvider } from './providers/types';
 import { CREATOR_PRESETS, SCENE_BY_CATEGORY, creatorByKey } from './creators.config';
 import { expandCommands } from './commands.config';
+import { VIDEO_QUALITY, videoQuality } from '../config/credits.config';
 import { ffmpeg } from '../common/ffmpeg';
 import axios from 'axios';
 import * as os from 'os';
@@ -152,18 +153,19 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
   }
 
   // ── PASO 5: Video (GPT arma la animación según el producto → VideoProvider) ──
-  async generateVideo(input: { imageBase64: string; product: ProductInfo; style: string; duration: '5' | '10' }) {
+  async generateVideo(input: { imageBase64: string; product: ProductInfo; style: string; duration: '5' | '10'; videoQuality?: string }) {
     const animation = await this.openai.chat(
       'Sos director de cine publicitario. Describís el movimiento de cámara/animación para animar una imagen de producto.',
       `Producto: ${input.product.name} (categoría: ${input.product.category ?? 'general'}). Estilo: ${input.style}.
 Escribí en INGLÉS una instrucción de animación ESPECÍFICA para este tipo de producto (no genérica). Ej: gastronómico→vapor y movimiento de ingredientes; automotriz→travelling y reflejos; tecnológico→partículas e iluminación cinematográfica; retail→zoom y movimiento del producto. Máximo 2 frases, solo el movimiento.`,
       150,
     );
+    const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
     const r = await this.videoProvider.generate({
       image: input.imageBase64,
       prompt: animation.trim() || 'smooth cinematic camera movement, subtle zoom',
-      duration: Number(input.duration) as 5 | 10,
-      resolution: '1080p',
+      duration: Number(input.duration),
+      resolution: q.resolution, audio: q.audio,
     });
     return { videoUrl: r.url, animationPrompt: animation.trim(), model: r.model, seconds: r.seconds };
   }
@@ -181,7 +183,7 @@ Devolvé JSON: { "creatorKey": "<una key>", "scene": "escenario en inglés acord
   }
 
   // ── UGC: genera imagen de persona sintética + producto → video UGC ──────────
-  async generateUGC(input: { product: ProductInfo; creatorKey?: string; scene?: string; hook?: string; action?: string; cta?: string; duration?: '5' | '10'; referenceImage?: string; format?: Fmt }) {
+  async generateUGC(input: { product: ProductInfo; creatorKey?: string; scene?: string; hook?: string; action?: string; cta?: string; duration?: '5' | '10'; referenceImage?: string; format?: Fmt; videoQuality?: string }) {
     const creator = creatorByKey(input.creatorKey);
     const scene = input.scene || SCENE_BY_CATEGORY[(input.product.category ?? '').toLowerCase()] || creator.scene;
     const duration = input.duration ?? '10';
@@ -208,7 +210,8 @@ Devolvé JSON: { "creatorKey": "<una key>", "scene": "escenario en inglés acord
 
     // Video UGC: movimiento natural de persona interactuando con el producto
     const animation = `Natural UGC video: the person looks at the camera, holds and shows the product, subtle natural body and hand movements, slight handheld camera motion, organic smartphone-recorded feel. Not a TV commercial.`;
-    const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: animation, duration: Number(duration) as 5 | 10, resolution: '1080p' });
+    const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
+    const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: animation, duration: Number(duration), resolution: q.resolution, audio: q.audio });
 
     return {
       imageUrl, videoUrl: vid.url, model: vid.model, seconds: vid.seconds,
@@ -236,7 +239,7 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
   }
 
   // Genera UNA escena de la campaña (imagen persona+producto → video Seedance)
-  async generateUGCScene(input: { product: ProductInfo; scene: { key: string; imagePrompt: string; videoPrompt: string; seconds?: number }; referenceImage?: string; avatarImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string }) {
+  async generateUGCScene(input: { product: ProductInfo; scene: { key: string; imagePrompt: string; videoPrompt: string; seconds?: number }; referenceImage?: string; avatarImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string; videoQuality?: string }) {
     const hasRef = !!input.referenceImage;
     const productLine = hasRef
       ? `The person is clearly holding and showing the EXACT product from the reference image — keep the product packaging, brand, logo, colors, text and shape IDENTICAL to the reference, fully visible, unchanged, well-lit and in sharp focus, correct proportions.`
@@ -264,7 +267,8 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     }
 
     const dur = (input.scene.seconds ?? 8) >= 9 ? 10 : 5;
-    const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: input.scene.videoPrompt || 'natural UGC movement, person interacting with the product', duration: dur as 5 | 10, resolution: '1080p' });
+    const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
+    const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: input.scene.videoPrompt || 'natural UGC movement, person interacting with the product', duration: dur, resolution: q.resolution, audio: q.audio });
     return { imageUrl, videoUrl: vid.url, model: vid.model, seconds: vid.seconds, sceneKey: input.scene.key };
   }
 

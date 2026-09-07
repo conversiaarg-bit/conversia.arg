@@ -13,3 +13,11 @@ export const aiCreditsConfig = {
 };
 
 export type AiCreditsConfig = typeof aiCreditsConfig;
+
+// Fallback de opciones de calidad de video (la fuente real es GET /creative/costs).
+// Créditos = ceil(costoUSD / 0.05). 720p sin audio = el más barato (default recomendado).
+export const videoQualitiesFallback = [
+  { key: 'economico', label: '720p · sin audio', resolution: '720p',  audio: false, credits5: 3, credits10: 6 },
+  { key: 'hd',        label: '1080p · sin audio', resolution: '1080p', audio: false, credits5: 6, credits10: 12 },
+  { key: 'hd_audio',  label: '1080p · con audio', resolution: '1080p', audio: true,  credits5: 12, credits10: 24 },
+];

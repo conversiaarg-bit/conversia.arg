@@ -17,8 +17,10 @@ const D = <T,>(p: Promise<{ data: { data: T } }>) => p.then(r => r.data.data);
 // clave de idempotencia por generación (evita doble cobro ante reintentos)
 const idem = () => ({ headers: { 'Idempotency-Key': (crypto as any).randomUUID?.() ?? String(Date.now() + Math.random()) } });
 
+export interface VideoQualityOption { key: string; label: string; resolution: string; audio: boolean; credits5: number; credits10: number }
+
 export const creativeApi = {
-  costs: () => D<{ costs: Record<string, number>; credits: number }>(api.get('/creative/costs')),
+  costs: () => D<{ costs: Record<string, number>; videoQualities: VideoQualityOption[]; credits: number }>(api.get('/creative/costs')),
 
   analyze: (body: { name?: string; description?: string; imageBase64?: string }) =>
     D<ProductInfo>(api.post('/creative/analyze', body, { timeout: 60_000 })),
@@ -32,7 +34,7 @@ export const creativeApi = {
   image: (body: { product: ProductInfo; objective: string; style: string; format: Fmt; angleKey?: string; quality?: 'standard' | 'premium'; referenceImage?: string; referenceImages?: string[]; brief?: string }) =>
     D<{ variant: ImageVariant; credits: number; creditsUsed: number }>(api.post('/creative/image', body, { timeout: 120_000, ...idem() })),
 
-  video: (body: { imageBase64: string; product: ProductInfo; style: string; duration: '5' | '10' }) =>
+  video: (body: { imageBase64: string; product: ProductInfo; style: string; duration: '5' | '10'; videoQuality?: string }) =>
     D<{ videoUrl: string; animationPrompt: string; credits: number; creditsUsed: number }>(api.post('/creative/video', body, { timeout: 180_000, ...idem() })),
 
   copy: (body: { product: ProductInfo; objective: string; style: string }) =>
@@ -42,13 +44,13 @@ export const creativeApi = {
   creators: () => D<{ creators: any[] }>(api.get('/creative/creators')),
   ugcAuto: (body: { product: ProductInfo }) =>
     D<{ creatorKey: string; scene: string; hook: string; action: string; cta: string }>(api.post('/creative/ugc-auto', body, { timeout: 60_000 })),
-  ugc: (body: { product: ProductInfo; creatorKey?: string; scene?: string; hook?: string; action?: string; cta?: string; duration?: '5' | '10'; referenceImage?: string; format?: Fmt }) =>
+  ugc: (body: { product: ProductInfo; creatorKey?: string; scene?: string; hook?: string; action?: string; cta?: string; duration?: '5' | '10'; referenceImage?: string; format?: Fmt; videoQuality?: string }) =>
     D<{ imageUrl: string; videoUrl: string; creator: { key: string; name: string }; script: any; credits: number; creditsUsed: number }>(api.post('/creative/ugc', body, { timeout: 200_000, ...idem() })),
 
   // Campaña UGC (agente planifica escenas → nodos)
   ugcPlan: (body: { product: ProductInfo; creatorKey?: string }) =>
     D<{ creator: string; scenes: UgcScene[] }>(api.post('/creative/ugc-campaign/plan', body, { timeout: 90_000 })),
-  ugcScene: (body: { product: ProductInfo; scene: UgcScene; referenceImage?: string; avatarImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string }) =>
+  ugcScene: (body: { product: ProductInfo; scene: UgcScene; referenceImage?: string; avatarImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string; videoQuality?: string }) =>
     D<{ imageUrl: string; videoUrl: string | null; videoPending?: boolean; sceneKey: string; credits: number; creditsUsed: number }>(api.post('/creative/ugc-campaign/scene', body, { timeout: 200_000, ...idem() })),
 
   tts: (text: string, voice?: string) => D<{ audioUrl: string }>(api.post('/creative/tts', { text, voice }, { timeout: 60_000 })),

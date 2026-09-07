@@ -4,7 +4,8 @@ import { C } from '../../styles/theme';
 import { Spinner } from '../../components/ui';
 import { creativeApi, type Fmt, type ProductInfo, type ImageVariant, type CopyVariant, type Strategy } from '../../api/creative';
 import { workspaceApi } from '../../api/workspace';
-import { aiCreditsConfig } from '../../config/aiCreditsConfig';
+import { aiCreditsConfig, videoQualitiesFallback } from '../../config/aiCreditsConfig';
+import type { VideoQualityOption } from '../../api/creative';
 import UgcCampaign from './UgcCampaign';
 
 // ── Catálogos de UI ──────────────────────────────────────────────────────────
@@ -119,13 +120,15 @@ export default function AICreativeStudio() {
   const [confirm, setConfirm] = useState<null | { cost: number; label: string; run: () => void }>(null);
 
   const [costs, setCosts] = useState<Record<string, number>>(aiCreditsConfig);
+  const [videoQualities, setVideoQualities] = useState<VideoQualityOption[]>(videoQualitiesFallback);
+  const [vq, setVq] = useState<string>('economico'); // calidad de video elegida (default: la más barata)
   const [credits, setCredits] = useState<number>(0);
   const [onboard, setOnboard] = useState(false);
   useEffect(() => { try { if (!localStorage.getItem('cv_onboarded')) setOnboard(true); } catch { /* ignore */ } }, []);
   const closeOnboard = () => { try { localStorage.setItem('cv_onboarded', '1'); } catch { /* ignore */ } setOnboard(false); };
 
   useEffect(() => {
-    creativeApi.costs().then(r => { setCosts({ ...aiCreditsConfig, ...r.costs }); setCredits(r.credits); }).catch(() => {});
+    creativeApi.costs().then(r => { setCosts({ ...aiCreditsConfig, ...r.costs }); if (r.videoQualities?.length) setVideoQualities(r.videoQualities); setCredits(r.credits); }).catch(() => {});
   }, []);
 
   const [maxStep, setMaxStep] = useState(1);
@@ -175,13 +178,13 @@ export default function AICreativeStudio() {
 
   const genVideo = (duration: '5' | '10') => run('video', async () => {
     if (!s.selectedImage) return;
-    const r = await creativeApi.video({ imageBase64: s.selectedImage.url, product: s.product, style: s.strategy?.chosenStyle || s.style, duration });
+    const r = await creativeApi.video({ imageBase64: s.selectedImage.url, product: s.product, style: s.strategy?.chosenStyle || s.style, duration, videoQuality: vq });
     patch({ videoUrl: r.videoUrl }); setCredits(r.credits);
   });
 
   const genUGC = () => run('ugc', async () => {
     const pick = await creativeApi.ugcAuto({ product: s.product });
-    const r = await creativeApi.ugc({ product: s.product, ...pick, duration: '10', referenceImage: s.imageBase64, format: s.format });
+    const r = await creativeApi.ugc({ product: s.product, ...pick, duration: '10', referenceImage: s.imageBase64, format: s.format, videoQuality: vq });
     patch({ videoUrl: r.videoUrl, selectedImage: s.selectedImage ?? { key: 'ugc', label: 'UGC', description: r.creator?.name ?? '', prompt: '', url: r.imageUrl, model: '' } });
     setCredits(r.credits);
   });
@@ -213,7 +216,7 @@ export default function AICreativeStudio() {
       {view === 'launcher' ? (
         <Launcher setView={setView} />
       ) : view === 'campaign' ? (
-        <UgcCampaign costs={costs} credits={credits} setCredits={setCredits} />
+        <UgcCampaign costs={costs} credits={credits} setCredits={setCredits} vqOptions={videoQualities} vq={vq} setVq={setVq} />
       ) : view === 'history' ? (
         <History onUse={(url: string) => { patch({ images: [url], imageBase64: url, variants: [], selectedImage: undefined }); setMaxStep(1); setStep(1); setView('studio'); }} />
       ) : (
@@ -232,7 +235,10 @@ export default function AICreativeStudio() {
                 {step === 2 && <StepObjetivo s={s} setObjective={(o: string) => patch({ objective: o })} onBack={() => goto(1)} onNext={() => goto(3)} />}
                 {step === 3 && <StepEstilo s={s} setStyle={(st: string) => patch({ style: st })} onBack={() => goto(2)} onNext={s.strategy ? () => goto(4) : buildStrategyAndGo} nextLabel={s.strategy ? 'Ir a imagen →' : 'Crear estrategia →'} />}
                 {step === 4 && <StepImagen s={s} costs={costs} setFormat={(f: Fmt) => patch({ format: f })} setBrief={(b: string) => patch({ brief: b })} onGen={(q?: 'standard' | 'premium') => withConfirm(costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm(costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => patch({ selectedImage: v })} onDownload={(v: ImageVariant) => downloadImage(v.url, `creativo-${v.key}`)} onBack={() => goto(3)} onNext={() => goto(5)} />}
-                {step === 5 && <StepVideo s={s} costs={costs} onGen={(d: '5' | '10') => withConfirm(d === '10' ? costs.video10 : costs.video5, `Generar video ${d}s`, () => genVideo(d))} onUGC={() => withConfirm(costs.ugc_video_10 ?? 10, 'Generar UGC (persona IA)', genUGC)} onBack={() => goto(4)} onNext={() => goto(6)} />}
+                {step === 5 && (() => {
+                  const vqOpt = videoQualities.find(q => q.key === vq) ?? videoQualities[0];
+                  return <StepVideo s={s} vqOptions={videoQualities} vq={vq} setVq={setVq} onGen={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar video ${d}s (${vqOpt.label})`, () => genVideo(d))} onUGC={() => withConfirm(vqOpt.credits10, `Generar UGC (${vqOpt.label})`, genUGC)} onBack={() => goto(4)} onNext={() => goto(6)} />;
+                })()}
                 {step === 6 && <StepCopy s={s} costs={costs} onGen={() => withConfirm(costs.copy, 'Generar copy', genCopy)} onPick={(c: CopyVariant) => patch({ selectedCopy: c })} onBack={() => goto(5)} onNext={() => { saveToHistory(); goto(7); }} />}
                 {step === 7 && <StepResultado s={s} onRegenImage={() => goto(4)} onRegenVideo={() => goto(5)} onRegenCopy={genCopy} onCampaign={() => nav('/dashboard/new-campaign')} onNew={reset} />}
               </>
@@ -650,9 +656,25 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
 }
 
 // ── PASO 5: Video ─────────────────────────────────────────────────────────────
-function StepVideo({ s, costs, onGen, onUGC, onBack, onNext }: any) {
+function StepVideo({ s, vqOptions, vq, setVq, onGen, onUGC, onBack, onNext }: any) {
   const [dur, setDur] = useState<'5' | '10'>('5');
   const [mode, setMode] = useState<'product' | 'ugc'>('product');
+  const opts: VideoQualityOption[] = vqOptions ?? [];
+  const cur: VideoQualityOption | undefined = opts.find(o => o.key === vq) ?? opts[0];
+  const QualitySelector = (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 8 }}>Calidad del video</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {opts.map(o => (
+          <button key={o.key} onClick={() => setVq(o.key)} style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 10, cursor: 'pointer', background: vq === o.key ? C.accentDim : C.surface, border: `1.5px solid ${vq === o.key ? C.accent : C.border}`, color: C.text, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <span><b>{o.label}</b>{o.key === 'economico' && <span style={{ fontSize: 11, color: C.accent, marginLeft: 6 }}>⭐ más barato</span>}</span>
+            <span style={{ fontSize: 11, color: C.textMuted, whiteSpace: 'nowrap' }}>5s: {o.credits5} · 10s: {o.credits10} créd.</span>
+          </button>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>El audio del video encarece ~2x. Para anuncios, la voz/música se agrega aparte.</div>
+    </div>
+  );
   return (
     <StepShell title="Convertí la imagen en video" subtitle="Video de producto (anima tu imagen) o UGC con una persona IA usando tu producto. Podés saltar este paso.">
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, background: C.surface, borderRadius: 12, padding: 4, border: `1px solid ${C.border}`, maxWidth: 380 }}>
@@ -669,22 +691,23 @@ function StepVideo({ s, costs, onGen, onUGC, onBack, onNext }: any) {
         <div>
           {mode === 'product' ? (
             <>
+              {QualitySelector}
               <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 8 }}>Duración</div>
               <div style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
                 {(['5', '10'] as const).map(d => (
                   <button key={d} onClick={() => setDur(d)} style={{ flex: 1, padding: '12px', borderRadius: 10, cursor: 'pointer', background: dur === d ? C.accentDim : C.surface, border: `1.5px solid ${dur === d ? C.accent : C.border}`, color: C.text }}>
-                    <b>{d}s</b> <span style={{ fontSize: 11, color: C.textMuted }}>· {d === '10' ? costs.video10 : costs.video5} créditos</span>
+                    <b>{d}s</b> <span style={{ fontSize: 11, color: C.textMuted }}>· {d === '10' ? cur?.credits10 : cur?.credits5} créditos</span>
                   </button>
                 ))}
               </div>
-              {dur === '10' && <Banner tone="amber">⚠️ El video de 10s consume más créditos.</Banner>}
               <Btn style={{ marginTop: 14 }} onClick={() => onGen(dur)} disabled={!s.selectedImage}>🎬 {s.videoUrl ? 'Regenerar' : 'Generar'} video</Btn>
             </>
           ) : (
             <>
+              {QualitySelector}
               <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 4 }}>UGC automático</div>
               <p style={{ fontSize: 13, color: C.textMuted, marginTop: 0 }}>La IA elige un creador virtual, el escenario y el guion según tu producto, y graba un Reel de 10s (persona 100% sintética).</p>
-              <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 10 }}>Costo: <b style={{ color: C.accent }}>{costs.ugc_video_10 ?? 10} créditos</b></div>
+              <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 10 }}>Costo: <b style={{ color: C.accent }}>{cur?.credits10} créditos</b></div>
               <Btn onClick={onUGC}>🎭 {s.videoUrl ? 'Regenerar' : 'Generar'} UGC automático</Btn>
             </>
           )}

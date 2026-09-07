@@ -18,8 +18,9 @@ export interface ImageProvider {
 export interface VideoGenInput {
   image: string;             // URL pública o base64 de la imagen base
   prompt: string;            // instrucción de animación (idioma interno)
-  duration: 5 | 10;
-  resolution?: string;       // '1080p' etc
+  duration: number;          // segundos (fal soporta 4–12)
+  resolution?: string;       // '480p' | '720p' | '1080p'
+  audio?: boolean;           // generar audio (encarece ~2x)
 }
 export interface VideoResult { url: string; model: string; seconds: number }
 export interface VideoProvider {

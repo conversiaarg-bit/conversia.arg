@@ -23,7 +23,7 @@ const SKELETON: UgcScene[] = [
 const ugcCache: { s?: any } = {};
 
 // Campaña UGC por "nodos": el agente planifica 4 escenas y las genera con IA (Seedance).
-export default function UgcCampaign({ costs, credits, setCredits }: { costs: Record<string, number>; credits: number; setCredits: (n: number) => void }) {
+export default function UgcCampaign({ costs, credits, setCredits, vqOptions = [], vq = 'economico', setVq }: { costs: Record<string, number>; credits: number; setCredits: (n: number) => void; vqOptions?: any[]; vq?: string; setVq?: (k: string) => void }) {
   const [name, setName] = useState('');
   const [cmd, setCmd] = useState('');   // estilo/comandos "/x" aplicados a todas las escenas
   const [avatar, setAvatar] = useState('');  // descripción del avatar/persona
@@ -108,7 +108,7 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
       const scene = plan.scenes[i];
       setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
       try {
-        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar });
+        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
         setCredits(res.credits);
         if (res.videoUrl) anyVideo = true;
         setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
@@ -189,7 +189,7 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
     setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
     pushMsg('copilot', `Generando la escena ${i + 1} (${scene.title})…`);
     try {
-      const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar });
+      const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
       setCredits(res.credits);
       setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
       pushMsg('copilot', `✓ Escena ${i + 1} lista.`);
@@ -341,6 +341,14 @@ export default function UgcCampaign({ costs, credits, setCredits }: { costs: Rec
           <button onClick={() => setHd(false)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: !hd ? C.accentDim : 'transparent', color: !hd ? C.accent : C.textMuted }}>Económico</button>
           <button onClick={() => setHd(true)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: hd ? C.accentDim : 'transparent', color: hd ? C.accent : C.textMuted }}>HD · exacto</button>
         </div>
+        {setVq && vqOptions.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '6px 10px' }}>
+            <span style={{ fontSize: 12, color: C.textMuted }}>Video:</span>
+            <select value={vq} onChange={e => setVq(e.target.value)} title="Calidad del video (afecta el costo)" style={{ background: 'transparent', border: 'none', color: C.text, fontSize: 12, fontWeight: 600, outline: 'none', cursor: 'pointer' }}>
+              {vqOptions.map((o: any) => <option key={o.key} value={o.key} style={{ color: '#000' }}>{o.label} ({o.credits10} créd./10s)</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       {askDur && (
