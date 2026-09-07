@@ -143,6 +143,18 @@ export class CreativeController {
     return { variants };
   }
 
+  // Combina varias fotos de producto en UNA imagen de combo. Cuesta como una imagen.
+  @Post('combo') @HttpCode(HttpStatus.OK)
+  @Throttle({ medium: { limit: 10, ttl: 60000 } })
+  async combo(@Body() body: any, @Request() req: any) {
+    await this.assertFree(req, 'image');
+    const op: CreditOperation = body?.quality === 'premium' ? 'image_premium' : 'image_standard';
+    const { result, credits, creditsUsed } = await this.billed(req,
+      { operation: op, amount: CREDIT_COSTS[op], provider: PROVIDERS.image, model: PROVIDERS.openaiImageModel },
+      () => this.svc.generateComboImage(body));
+    return { ...(result as any), credits, creditsUsed };
+  }
+
   // ── UGC (persona IA) ─────────────────────────────────────────────────────────
   @Get('creators')
   creators() { return { creators: CREATOR_PRESETS }; }

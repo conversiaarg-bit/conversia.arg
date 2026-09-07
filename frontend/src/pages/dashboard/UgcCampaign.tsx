@@ -42,6 +42,8 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   const uploadAvatar = async (f: File) => { const b64 = await toBase64(f); setUploadedAvatars(l => [b64, ...l]); setSelectedAvatar(b64); };
   const [imageBase64, setImageBase64] = useState<string | undefined>();
   const [productImages, setProductImages] = useState<string[]>([]); // varias fotos → combos
+  const [comboImage, setComboImage] = useState<string | undefined>(); // imagen combo generada (todos los productos juntos)
+  const [comboLoading, setComboLoading] = useState(false);
   const [format] = useState<Fmt>('9:16');
   const [plan, setPlan] = useState<{ creator: string; scenes: UgcScene[] } | null>(null);
   const [runs, setRuns] = useState<Record<string, SceneRun>>({});
@@ -109,7 +111,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
       const scene = plan.scenes[i];
       setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
       try {
-        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, referenceImages: productImages.length > 1 ? productImages : undefined, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
+        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, referenceImages: (!comboImage && productImages.length > 1) ? productImages : undefined, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
         setCredits(res.credits);
         if (res.videoUrl) anyVideo = true;
         setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
@@ -148,6 +150,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
       if (c.selectedAvatar) setSelectedAvatar(c.selectedAvatar);
       if (c.imageBase64) setImageBase64(c.imageBase64);
       if (Array.isArray(c.productImages)) setProductImages(c.productImages);
+      if (c.comboImage) setComboImage(c.comboImage);
       if (Array.isArray(c.messages) && c.messages.length > 1) setMessages(c.messages);
     }
     restored.current = true;
@@ -155,8 +158,8 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   const firstSave = useRef(true);
   useEffect(() => {
     if (firstSave.current) { firstSave.current = false; return; } // no pisar el cache en el montaje
-    ugcCache.s = { plan, runs, name, cmd, avatar, hd, selectedAvatar, imageBase64, productImages, messages };
-  }, [plan, runs, name, cmd, avatar, hd, selectedAvatar, imageBase64, productImages, messages]);
+    ugcCache.s = { plan, runs, name, cmd, avatar, hd, selectedAvatar, imageBase64, productImages, comboImage, messages };
+  }, [plan, runs, name, cmd, avatar, hd, selectedAvatar, imageBase64, productImages, comboImage, messages]);
 
   // Comandos recomendados según el producto (heurística, sin costo)
   const recCmds = (() => {
@@ -191,7 +194,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
     pushMsg('copilot', `Generando la escena ${i + 1} (${scene.title})…`);
     try {
-      const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, referenceImages: productImages.length > 1 ? productImages : undefined, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
+      const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, referenceImages: (!comboImage && productImages.length > 1) ? productImages : undefined, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
       setCredits(res.credits);
       setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
       pushMsg('copilot', `✓ Escena ${i + 1} lista.`);
@@ -208,13 +211,35 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     setRuns(r => Object.fromEntries(Object.keys(r).map(k => [k, { status: 'idle' as SceneStatus }])));
     setFinalVideoUrl(undefined);
   };
-  const onCopilotAttach = async (file: File) => {
-    const b64 = await toBase64(file);
-    const nice = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
-    const prev = name;
-    pushMsg('user', `📎 ${file.name} — hacelo con este artículo`);
-    applyNewProduct(b64, nice);
-    pushMsg('copilot', `Veo que subiste una nueva imagen de producto${nice ? ` (${nice})` : ''}. Voy a rehacer el anuncio con este artículo${prev ? ` en lugar de ${prev}` : ''}: lo puse como referencia en el nodo Producto y reinicié las escenas para regenerarlas. Escribí "ejecutá todo" y genero los videos con este producto.`);
+  const onCopilotAttach = async (files: File[]) => {
+    const list = Array.isArray(files) ? files : [files];
+    const b64s = await Promise.all(list.map(toBase64));
+    setComboImage(undefined); // nuevas fotos → el combo anterior ya no aplica
+    setProductImages(prev => {
+      const all = [...prev, ...b64s];
+      applyNewProduct(all[0], list[0]?.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim());
+      return all;
+    });
+    pushMsg('user', `📎 ${list.map(f => f.name).join(', ')}`);
+    const total = productImages.length + b64s.length;
+    pushMsg('copilot', total > 1
+      ? `Subiste ${total} artículos. Tocá "🧩 Generar combo" (arriba, junto a las miniaturas) para unirlos en UNA sola imagen con todos los productos juntos, y después la persona la muestra en el video. O escribí "ejecutá todo" para usarlos tal cual.`
+      : `Listo, puse el artículo como referencia. Podés subir más para armar un combo, o escribí "ejecutá todo" para generar los videos.`);
+  };
+
+  // Genera UNA imagen combo con todos los productos → pasa a ser la referencia de las escenas
+  const genCombo = async () => {
+    if (productImages.length < 1) return;
+    setComboLoading(true);
+    try {
+      const r = await creativeApi.combo({ product: { name: name || 'Producto' }, referenceImages: productImages, brief: cmd, quality: hd ? 'premium' : undefined, format });
+      setComboImage(r.imageUrl);
+      applyNewProduct(r.imageUrl); // el combo es ahora LA imagen de producto de las escenas
+      setCredits(r.credits);
+      pushMsg('copilot', '🧩 Listo, armé la imagen combo con todos los productos juntos. Ahora escribí "ejecutá todo" y la persona (avatar) muestra ese combo en cada escena.');
+    } catch (e: any) {
+      pushMsg('copilot', e?.response?.data?.message === 'SIN_CREDITOS' ? '🪫 Te quedaste sin créditos para armar el combo.' : 'No pude armar el combo (no se descontaron créditos). Probá de nuevo.');
+    } finally { setComboLoading(false); }
   };
 
   // ── El Copiloto interpreta y construye/edita los nodos por chat ──────────────
@@ -341,6 +366,12 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
             </div>
           ))}
           <button onClick={() => fileRef.current?.click()} style={{ width: 40, height: 40, borderRadius: 8, border: `1.5px dashed ${C.borderBright}`, background: C.surface, color: C.textMuted, fontSize: 18, cursor: 'pointer' }} title="Agregar más imágenes al combo">+</button>
+          {productImages.length >= 2 && (
+            <button onClick={genCombo} disabled={comboLoading} style={{ marginLeft: 4, padding: '7px 12px', borderRadius: 9, border: 'none', background: comboImage ? C.surface2 : C.grad, color: comboImage ? C.text : '#fff', fontSize: 12, fontWeight: 700, cursor: comboLoading ? 'wait' : 'pointer', opacity: comboLoading ? 0.6 : 1 }}>
+              {comboLoading ? 'Armando combo…' : comboImage ? '✓ Combo listo · rehacer' : '🧩 Generar combo'}
+            </button>
+          )}
+          {comboImage && <span style={{ fontSize: 11, color: C.accent }}>usando imagen combo ✓</span>}
         </div>
       )}
 
@@ -444,7 +475,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   );
 }
 
-function CopilotPanel({ messages, running, planned, onGenerate, onSend, onAttach }: { messages: { role: 'user' | 'copilot'; text: string }[]; running: boolean; planned: boolean; onGenerate: () => void; onSend: (t: string) => void; onAttach: (f: File) => void }) {
+function CopilotPanel({ messages, running, planned, onGenerate, onSend, onAttach }: { messages: { role: 'user' | 'copilot'; text: string }[]; running: boolean; planned: boolean; onGenerate: () => void; onSend: (t: string) => void; onAttach: (files: File[]) => void }) {
   const [text, setText] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
   const attachRef = useRef<HTMLInputElement>(null);
@@ -485,8 +516,8 @@ function CopilotPanel({ messages, running, planned, onGenerate, onSend, onAttach
         </div>
       )}
       <div style={{ padding: 12, borderTop: `1px solid ${C.border}`, display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input ref={attachRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) onAttach(f); e.currentTarget.value = ''; }} />
-        <button onClick={() => attachRef.current?.click()} disabled={running} title="Adjuntar foto de un artículo" style={{ background: C.surface2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, width: 38, height: 38, flexShrink: 0, cursor: 'pointer', fontSize: 16, opacity: running ? 0.5 : 1 }}>📎</button>
+        <input ref={attachRef} type="file" accept="image/*" multiple hidden onChange={e => { const fs = Array.from(e.target.files ?? []); if (fs.length) onAttach(fs); e.currentTarget.value = ''; }} />
+        <button onClick={() => attachRef.current?.click()} disabled={running} title="Adjuntar una o varias fotos de artículos (para combos)" style={{ background: C.surface2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, width: 38, height: 38, flexShrink: 0, cursor: 'pointer', fontSize: 16, opacity: running ? 0.5 : 1 }}>📎</button>
         <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder="Pedile al Copiloto: crear, editar un nodo, o adjuntá un artículo…" style={{ flex: 1, minWidth: 0, background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 13, outline: 'none' }} />
         <button onClick={send} disabled={running || !text.trim()} style={{ background: C.accent, color: '#fff', border: 'none', borderRadius: 10, padding: '0 14px', height: 38, fontWeight: 700, cursor: 'pointer', opacity: running || !text.trim() ? 0.5 : 1 }}>↑</button>
       </div>

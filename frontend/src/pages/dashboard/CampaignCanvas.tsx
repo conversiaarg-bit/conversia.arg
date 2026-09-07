@@ -8,7 +8,7 @@ interface SceneRun { status: SceneStatus; imageUrl?: string; videoUrl?: string }
 type GroupKey = 'entrada' | 'generacion' | 'salida';
 interface GNode { id: string; x: number; y: number; group: GroupKey; emoji: string; title: string; model?: string; badges: string[]; status: SceneStatus; media?: string; poster?: string; text?: string; scene?: UgcScene }
 
-const W = 210, H = 156;
+const W = 250, H = 220;
 const GROUPS: { key: GroupKey; label: string; color: string }[] = [
   { key: 'entrada', label: 'Entrada', color: '#4da6ff' },
   { key: 'generacion', label: 'Generación', color: '#7c5cfc' },
@@ -56,7 +56,7 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
   const queued = Math.max(0, plan.scenes.length - doneCount - runningCount);
 
   // ── Layout en 3 columnas (Entrada → Generación → Salida) ──
-  const IN_X = 40, GEN_X = 380, OUT_X = 760, GAP = 172;
+  const IN_X = 40, GEN_X = 380, OUT_X = 760, GAP = 250;
   const nodes: GNode[] = [];
   // Entrada
   nodes.push({ id: 'product', x: IN_X, y: 40, group: 'entrada', emoji: '📦', title: 'Imagen de producto', model: 'Referencia', badges: ['imagen'], status: 'done', poster: productImage, text: productImage ? undefined : 'Subí una foto del producto' });
@@ -238,8 +238,8 @@ function Node({ n, onDown, selected }: { n: GNode; onDown: (e: React.MouseEvent,
       </div>
       {/* Cuerpo: media o texto */}
       <div style={{ flex: 1, background: hasMedia ? '#080814' : '#0d0d1e', position: 'relative', display: hasMedia ? 'grid' : 'block', placeItems: 'center', overflow: 'hidden' }}>
-        {n.media ? <video src={n.media} muted loop autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          : n.poster ? <img src={n.poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {n.media ? <video src={n.media} muted loop autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          : n.poster ? <img src={n.poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           : <div style={{ padding: '8px 10px', fontSize: 10.5, lineHeight: 1.45, color: '#b9b9d6', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{n.text}</div>}
         {/* Badges de modelo secundarios (solo en nodos con media) */}
         {hasMedia && n.badges.length > 0 && (

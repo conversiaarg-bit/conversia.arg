@@ -40,6 +40,10 @@ export const creativeApi = {
   copy: (body: { product: ProductInfo; objective: string; style: string }) =>
     D<{ variants: CopyVariant[]; credits: number; creditsUsed: number }>(api.post('/creative/copy', body, { timeout: 60_000 })),
 
+  // Combina varias fotos de producto en UNA imagen de combo
+  combo: (body: { product: ProductInfo; referenceImages: string[]; brief?: string; quality?: 'standard' | 'premium'; format?: Fmt }) =>
+    D<{ imageUrl: string; credits: number; creditsUsed: number }>(api.post('/creative/combo', body, { timeout: 120_000, ...idem() })),
+
   // UGC (persona IA)
   creators: () => D<{ creators: any[] }>(api.get('/creative/creators')),
   ugcAuto: (body: { product: ProductInfo }) =>

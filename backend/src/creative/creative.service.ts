@@ -241,6 +241,25 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     return { creator: plan.creator ?? creator, scenes: (plan.scenes ?? []).slice(0, 4) };
   }
 
+  // Combina VARIAS fotos de producto en UNA sola imagen de combo (todos los artículos juntos).
+  async generateComboImage(input: { product: ProductInfo; referenceImages: string[]; brief?: string; quality?: 'standard' | 'premium'; format?: Fmt }) {
+    const pics = (input.referenceImages ?? []).filter(Boolean);
+    if (pics.length < 1) throw new BadRequestException('Subí al menos una imagen de producto.');
+    const { fragments, rest } = expandCommands(input.brief);
+    const cmdLine = (fragments.length || rest) ? ` Commercial directives: ${[...fragments, rest].filter(Boolean).join('; ')}.` : '';
+    const prompt = [
+      `Professional commercial COMBO product photo: arrange TOGETHER all ${pics.length} products from the reference images as an attractive bundle/combo on a clean studio background.`,
+      `Keep EACH product's packaging, brand, logo, colors, text and shape IDENTICAL to its reference — all products fully visible, sharp focus, well-lit, correct proportions, nicely composed together.`,
+      `No watermark, no extra text overlay.${cmdLine}`,
+    ].join(' ');
+    const img = await this.imageProvider.generate({
+      prompt, format: input.format ?? '9:16', quality: input.quality ?? 'standard',
+      referenceImage: pics[0], referenceImages: pics.length > 1 ? pics : undefined,
+    });
+    const imageUrl = await this.persist(img.dataUrl, 'image');
+    return { imageUrl, model: img.model };
+  }
+
   // Genera UNA escena de la campaña (imagen persona+producto → video Seedance)
   async generateUGCScene(input: { product: ProductInfo; scene: { key: string; imagePrompt: string; videoPrompt: string; seconds?: number }; referenceImage?: string; referenceImages?: string[]; avatarImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string; videoQuality?: string }) {
     // Fotos del producto: varias = combo (todos los productos juntos en la escena)
