@@ -6,7 +6,6 @@ import FileUploadZone, { type UploadFile } from '../../components/ui/FileUploadZ
 import { uploadsApi } from '../../api/uploads';
 import { campaignsApi, type MetaAccount } from '../../api/campaigns';
 import { generateCreativeImage } from '../../utils/creativeCanvas';
-import { editProductImage, generateProductImage } from '../../utils/openaiImageEdit';
 import { C } from '../../styles/theme';
 
 const STEP_META = [
@@ -132,6 +131,7 @@ export default function NewCampaign() {
   const [generatingImages, setGeneratingImages] = useState(false);
   const [fluxError, setFluxError] = useState('');
   const [productPhotoUrl, setProductPhotoUrl] = useState<string | null>(null);
+  const [autoGen, setAutoGen] = useState(false); // generar los 3 formatos automáticamente al venir del Studio
 
   // Autocompletar cuando venimos de "Crear campaña" del Studio (Creativos IA).
   const location = useLocation();
@@ -147,7 +147,7 @@ export default function NewCampaign() {
     if (fs.videoUrl) mains.push(mk(fs.videoUrl, true));
     if (fs.imageUrl) { if (fs.videoUrl) setExtraFiles([mk(fs.imageUrl, false)]); else mains.push(mk(fs.imageUrl, false)); }
     if (mains.length) setMainFiles(mains);
-    if (fs.imageUrl) { setCreativeImages([fs.imageUrl]); setProductPhotoUrl(fs.imageUrl); }
+    if (fs.imageUrl) { setCreativeImages([fs.imageUrl]); setProductPhotoUrl(fs.imageUrl); setAutoGen(true); }
     // Estrategia ya lista (del Studio) → el paso "IA analiza" queda precompletado, sin re-llamar.
     if (fs.strategy || fs.copy) {
       setStrategy({
@@ -182,26 +182,31 @@ export default function NewCampaign() {
     ).then(setCreativeImages);
   }, [step, strategy]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Generación PAGA de creativos con IA (solo al apretar el botón)
+  // Auto-generar los 3 formatos una sola vez cuando venimos del Studio (ya con la foto de referencia).
+  useEffect(() => {
+    if (autoGen && productPhotoUrl) { setAutoGen(false); genCreatives(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoGen, productPhotoUrl]);
+
+  // Genera los 3 formatos con el endpoint creative/image (Analyzer + producto EXACTO).
+  // ref = la foto/creativo del producto → cada formato preserva el producto real.
   const genCreatives = async () => {
-    if (!strategy) return;
-    const hook = strategy.hook || form.name || 'Oferta especial';
+    const hook = strategy?.hook || form.name || 'Oferta especial';
     const product = form.name || 'Producto';
-    const style = strategy.styleNotes ?? 'Hook urgencia';
+    const style = strategy?.styleNotes ?? 'profesional';
     const description = form.desc || undefined;
-    const photoUrl2 = productPhotoUrl;
+    const ref = productPhotoUrl || mainFiles.find(f => f.url)?.url || extraFiles.find(f => f.url)?.url;
     setGeneratingImages(true); setFluxError('');
     try {
       const images = await Promise.all(
         CREATIVE_CONFIGS.map(cfg =>
-          (photoUrl2
-            ? editProductImage(photoUrl2, product, style, cfg.fmt, hook, description)
-            : generateProductImage(product, style, cfg.fmt, hook, description)
-          ).catch((err: any) => {
-            const msg = err?.response?.data?.message ?? err?.message ?? String(err);
-            setFluxError(`Usando plantilla — IA sin configurar. (${String(msg).slice(0, 90)})`);
-            return generateCreativeImage({ hook, product, format: cfg.fmt, style, avatarEmoji: cfg.emoji, gradientFrom: cfg.from, gradientTo: cfg.to });
-          })
+          creativeApi.image({ product: { name: product, description }, objective: 'vender', style, format: cfg.fmt, referenceImage: ref || undefined, brief: hook })
+            .then(r => r.variant.url)
+            .catch((err: any) => {
+              const msg = err?.response?.data?.message ?? err?.message ?? String(err);
+              setFluxError(`Usando plantilla — IA sin configurar. (${String(msg).slice(0, 90)})`);
+              return generateCreativeImage({ hook, product, format: cfg.fmt, style, avatarEmoji: cfg.emoji, gradientFrom: cfg.from, gradientTo: cfg.to });
+            })
         )
       );
       setCreativeImages(images);
