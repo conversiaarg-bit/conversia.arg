@@ -4,7 +4,7 @@ import axios from 'axios';
 import { ImageProvider, ImageGenInput, ImageResult, Fmt } from './types';
 import { PROVIDERS } from '../../config/providers.config';
 
-// Único punto que conoce la API de imágenes de OpenAI (gpt-image-2).
+// Único punto que conoce la API de imágenes de OpenAI (gpt-image-1).
 @Injectable()
 export class OpenAIImageProvider implements ImageProvider {
   readonly name = 'openai';

@@ -27,6 +27,16 @@ export class CostTrackingService {
     ).catch(() => { /* logging no debe romper la generación */ });
   }
 
+  // Últimos errores de generación (para debug — solo lectura, no gasta nada)
+  async recentErrors(limit = 10): Promise<any[]> {
+    try {
+      const { rows } = await this.db.query(
+        `SELECT provider, model, operation, error, created_at
+         FROM ai_generations WHERE status='failed' ORDER BY created_at DESC LIMIT $1`, [limit]);
+      return rows;
+    } catch { return []; }
+  }
+
   // Métricas para el ADMIN cost dashboard
   // Gasto real de IA del mes en USD (para el tope duro que bloquea generación).
   async monthlySpendUsd(): Promise<number> {

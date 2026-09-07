@@ -68,8 +68,8 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
     nodes.push({
       id: s.key, x: GEN_X, y: 40 + i * GAP, group: 'generacion',
       emoji: ['🎣', '💬', '⚡', '🎯'][i] ?? '🎬',
-      title: `Escena ${i + 1} · ${s.title}`, model: 'Seedance 1.5 Pro',
-      badges: ['gpt-image-2', 'Seedance'], status: run.status,
+      title: `Escena ${i + 1} · ${s.title}`, model: 'OpenAI → Seedance',
+      badges: ['imagen: OpenAI', 'video: Seedance'], status: run.status,
       media: run.videoUrl, poster: run.imageUrl,
       text: s.script || s.imagePrompt || `Persona con el producto — ${s.seconds}s`, scene: s,
     });

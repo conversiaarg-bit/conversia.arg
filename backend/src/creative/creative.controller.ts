@@ -67,6 +67,10 @@ export class CreativeController {
     return { free: true, remaining };
   }
 
+  // Debug (solo lectura): últimos errores de generación de IA.
+  @Get('debug/errors')
+  async debugErrors() { return { errors: await this.cost.recentErrors(10) }; }
+
   @Get('costs')
   async costs(@Request() req: any) {
     // Opciones de calidad de video con su costo en créditos (para el selector de la UI)
