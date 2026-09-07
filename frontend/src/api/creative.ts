@@ -20,7 +20,7 @@ const idem = () => ({ headers: { 'Idempotency-Key': (crypto as any).randomUUID?.
 export interface VideoQualityOption { key: string; label: string; resolution: string; audio: boolean; credits5: number; credits10: number }
 
 export const creativeApi = {
-  costs: () => D<{ costs: Record<string, number>; videoQualities: VideoQualityOption[]; credits: number }>(api.get('/creative/costs')),
+  costs: () => D<{ costs: Record<string, number>; videoQualities: VideoQualityOption[]; videoEnabled: boolean; credits: number }>(api.get('/creative/costs')),
 
   analyze: (body: { name?: string; description?: string; imageBase64?: string }) =>
     D<ProductInfo>(api.post('/creative/analyze', body, { timeout: 60_000 })),
