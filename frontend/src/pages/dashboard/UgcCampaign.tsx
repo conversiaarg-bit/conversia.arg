@@ -34,6 +34,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   const [uploadedAvatars, setUploadedAvatars] = useState<string[]>([]);
   const [showAvatars, setShowAvatars] = useState(false);
   const avatarFileRef = useRef<HTMLInputElement>(null);
+  const selfAvatarRef = useRef<HTMLInputElement>(null);
   const loadAvatars = () => creativeApi.list().then((items: any[]) => {
     // Todas las escenas con imagen (sirve de referencia del avatar; incluye las que ya tienen video)
     const imgs = (items || []).filter(it => it.output_url).map(it => it.output_url);
@@ -49,6 +50,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   const [pkg, setPkg] = useState<any>(null);   // paquete de ads (hooks/copy/variaciones)
   const [pkgLoading, setPkgLoading] = useState(false);
   const [showPkg, setShowPkg] = useState(false);
+  const [adScript, setAdScript] = useState('');   // guion elegido de una variación → lo dice el video
   const [format] = useState<Fmt>('9:16');
   const [plan, setPlan] = useState<{ creator: string; scenes: UgcScene[] } | null>(null);
   const [runs, setRuns] = useState<Record<string, SceneRun>>({});
@@ -116,7 +118,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     setRunning(true); setErr(null); setPipe({});
     pushMsg('copilot', 'Generando: OpenAI arma el prompt de imagen y de video, crea la imagen del personaje con el producto, y Seedance hace el video…');
     try {
-      const res = await creativeApi.ugcOneShot({ product: { name: name || 'Producto' }, referenceImage: productRef, referenceImages: refsArr, avatarImage: selectedAvatar, avatarDesc: avatar, brief: cmd, quality: hd ? 'premium' : undefined, videoQuality: vq, format, duration: videoDur });
+      const res = await creativeApi.ugcOneShot({ product: { name: name || 'Producto' }, referenceImage: productRef, referenceImages: refsArr, avatarImage: selectedAvatar, avatarDesc: avatar, brief: cmd, scriptOverride: adScript || undefined, quality: hd ? 'premium' : undefined, videoQuality: vq, format, duration: videoDur });
       setCredits(res.credits);
       setPipe({ productData: (res as any).productData, imagePrompt: res.imagePrompt, videoPrompt: res.videoPrompt, script: res.script, imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined });
       pushMsg('copilot', res.videoUrl ? '🎥 Video listo — descargalo desde el nodo Video.' : '🖼️ Imagen lista (el video queda pendiente hasta activar Seedance).');
@@ -351,6 +353,15 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
         {doneCount > 0 && <button onClick={saveProject} style={{ padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text }}>{saved ? '✓ Guardado' : '💾 Guardar'}</button>}
       </div>
 
+      {/* Guion elegido del paquete de ads (lo dice el video) */}
+      {adScript && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', background: C.accentDim, border: `1px solid ${C.accent}55`, borderRadius: 10 }}>
+          <span style={{ fontSize: 15 }}>🎙️</span>
+          <span style={{ flex: 1, fontSize: 12.5, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Guion elegido: {adScript}</span>
+          <button onClick={() => setAdScript('')} title="Quitar guion" style={{ background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 14 }}>✕</button>
+        </div>
+      )}
+
       {/* Combo: miniaturas de todas las imágenes del producto (subí varias para armar combos) */}
       {productImages.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -382,6 +393,10 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
 
       {/* Avatar (galería + describir) + Producto exacto (HD) */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+        <button onClick={() => selfAvatarRef.current?.click()} title="Subí tu propia foto para ser vos la persona del video" style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.grad, border: 'none', borderRadius: 10, padding: '7px 12px', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          🙋 Agregate como avatar
+        </button>
+        <input ref={selfAvatarRef} type="file" accept="image/*" hidden onChange={async e => { const f = e.target.files?.[0]; if (f) { const b64 = await toBase64(f); setUploadedAvatars(l => [b64, ...l]); setSelectedAvatar(b64); pushMsg('copilot', '🙋 Listo, vas a ser vos la persona del video. Generá cuando quieras.'); } e.currentTarget.value = ''; }} />
         <button onClick={() => { loadAvatars(); setShowAvatars(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8, background: selectedAvatar ? C.accentDim : C.surface, border: `1px solid ${selectedAvatar ? C.accent : C.border}`, borderRadius: 10, padding: '6px 12px', color: C.text, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
           {selectedAvatar ? <img src={selectedAvatar} alt="" style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }} /> : <span style={{ fontSize: 15 }}>🧑</span>}
           {selectedAvatar ? 'Avatar elegido' : 'Plantillas / Avatares'}
@@ -504,7 +519,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
                         <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 3, textTransform: 'uppercase' }}>{k.replace('_', ' ')}</div>
                         <div style={{ display: 'flex', gap: 8 }}>
                           <div style={{ flex: 1, fontSize: 12.5, color: C.text, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px' }}>{pkg.variations[k].voice_script}</div>
-                          <button onClick={() => { setCmd(pkg.variations[k].voice_script); setShowPkg(false); pushMsg('copilot', `Cargué el guion de la variación "${k}". Ejecutá para generar el video.`); }} style={{ background: C.accent, border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, padding: '8px 10px', whiteSpace: 'nowrap' }}>Usar</button>
+                          <button onClick={() => { setAdScript(pkg.variations[k].voice_script); setShowPkg(false); pushMsg('copilot', `🎙️ Guion "${k.replace('_', ' ')}" cargado. Tocá "▶ Generar video" y la persona lo va a decir (elegí calidad "con voz").`); }} style={{ background: C.accent, border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, padding: '8px 10px', whiteSpace: 'nowrap' }}>Usar</button>
                         </div>
                       </div>
                     ))}

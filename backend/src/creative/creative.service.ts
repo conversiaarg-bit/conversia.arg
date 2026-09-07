@@ -362,7 +362,7 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
   // OpenAI genera la imagen del personaje con el producto EXACTO → Seedance genera UN video.
   async generateOneShotUGC(input: {
     product: ProductInfo; referenceImages?: string[]; referenceImage?: string;
-    avatarImage?: string; avatarDesc?: string; brief?: string;
+    avatarImage?: string; avatarDesc?: string; brief?: string; scriptOverride?: string;
     quality?: 'standard' | 'premium'; videoQuality?: string; format?: Fmt; duration?: '5' | '10';
   }) {
     const productPics = (input.referenceImages?.length ? input.referenceImages : [input.referenceImage]).filter(Boolean) as string[];
@@ -406,18 +406,21 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
       return { productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script, imageUrl, videoUrl: null, videoPending: true };
     }
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
+    // Guion final: el elegido por el usuario (variación del paquete) o el que armó el Prompt Master.
+    const finalScript = input.scriptOverride?.trim() || plan.script;
+    const spoken = finalScript ? ` The person says in Spanish: "${finalScript}".` : '';
     // Seedance SIEMPRE sin su audio (ruido ambiente). Si la calidad pide audio, le
     // ponemos LOCUCIÓN (TTS del guion) y la mezclamos → la persona "dice" el guion.
     const vid = await this.videoProvider.generate({
       image: img.dataUrl,
-      prompt: `${plan.videoPrompt || 'natural UGC selfie, person talking to camera holding the product'} ${UGC_VIDEO_DIRECTIVE}`,
+      prompt: `${plan.videoPrompt || 'natural UGC selfie, person talking to camera holding the product'}${spoken} ${UGC_VIDEO_DIRECTIVE}`,
       duration: secs, resolution: q.resolution, audio: false,
     });
     const videoUrl = q.audio
-      ? await this.muxVoiceover(vid.url, plan.script)
+      ? await this.muxVoiceover(vid.url, finalScript)
       : await this.persist(vid.url, 'video');
     return {
-      productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script,
+      productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: finalScript,
       imageUrl, videoUrl, model: vid.model, seconds: vid.seconds,
     };
   }
@@ -457,7 +460,7 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
     const secs = Math.min(10, Math.max(6, input.seconds ?? 8));
     const avatar = input.avatarUsar !== false; // por defecto incluye persona
     const pkg = await this.openai.chatJSON<any>(
-      'Sos un MOTOR backend de creativos publicitarios de e-commerce para Meta/TikTok Ads (Argentina). NO charlás: devolvés SOLO JSON estricto. Reglas: nunca modificar el diseño del producto, nunca inventar características, basar todo en el JSON del producto, SIEMPRE audio con voz, estilo performance (no cine), idioma ESPAÑOL rioplatense, tono vendedor natural y creíble, foco en conversión. Si el input es incompleto, autocompletá con lógica. Guiones cortos (6-10s) para bajar costo de render.',
+      'Sos un COPYWRITER SENIOR de performance marketing (10+ años en e-commerce, Meta/TikTok Ads Argentina) y actuás como MOTOR backend: devolvés SOLO JSON estricto, sin charlar. Escribís copy PROFESIONAL y pulido: ganchos potentes que frenan el scroll, beneficios concretos (no genéricos ni cliché), lenguaje natural rioplatense creíble (nada robótico ni de traductor), y un CTA claro. Reglas: nunca modificar el diseño del producto, nunca inventar características (basate SOLO en el JSON), SIEMPRE audio con voz, estilo performance real (no cine), foco absoluto en CONVERSIÓN. Evitá: signos de exclamación de más, mayúsculas gritadas, promesas vacías, relleno. Guiones cortos y con ritmo (6-10s). Si falta info, autocompletá con criterio profesional.',
       `INPUT producto: ${JSON.stringify(input.product)}.${truth}\nAvatar/persona en video: ${avatar ? 'SÍ (mostrar interacción humana con el producto)' : 'NO (solo producto + voz en off)'}. Duración objetivo: ${secs}s. 9:16 vertical.
 
 Generá el paquete y devolvé SOLO este JSON (todo en español AR, salvo las secciones técnicas de los video_prompt que van en inglés PERO con el "Voice script" citado en español):
