@@ -74,7 +74,7 @@ export class CreativeController {
       key, label: v.label, resolution: v.resolution, audio: v.audio,
       credits5: videoCredits(key, 5), credits10: videoCredits(key, 10),
     }));
-    return { costs: CREDIT_COSTS, videoQualities, videoEnabled: this.svc.videoAvailable, credits: await this.credits.balance(req.user.id) };
+    return { costs: CREDIT_COSTS, videoQualities, videoEnabled: this.svc.videoAvailable, storageDurable: this.svc.storageDurable, credits: await this.credits.balance(req.user.id) };
   }
 
   // PASO 1 (gratis)

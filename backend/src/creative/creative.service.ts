@@ -66,6 +66,8 @@ export class CreativeService {
   // El controller lo usa para decidir el costo/operación ANTES de generar (ej.
   // cobrar como imagen y no como video-UGC si Seedance todavía no está configurado).
   get videoAvailable(): boolean { return this.videoProvider.enabled; }
+  // true si la media persiste entre deploys (Volume de Railway o S3/R2).
+  get storageDurable(): boolean { return this.storage.durable; }
 
   // ── PASO 1: Analizar producto (texto y/o foto) ──────────────────────────────
   async analyzeProduct(input: { name?: string; description?: string; imageBase64?: string }): Promise<ProductInfo> {
