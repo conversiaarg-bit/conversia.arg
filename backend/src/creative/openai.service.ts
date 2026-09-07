@@ -60,7 +60,7 @@ export class OpenaiService {
   // Chat con imagen (vision) — para analizar la foto del producto.
   async chatVisionJSON<T = any>(system: string, prompt: string, imageBase64: string, maxTokens = 700): Promise<T> {
     const model = this.config.get<string>('openai.chatModel') ?? 'gpt-4o-mini';
-    const dataUrl = imageBase64.startsWith('data:') ? imageBase64 : `data:image/png;base64,${imageBase64}`;
+    const dataUrl = (imageBase64.startsWith('data:') || imageBase64.startsWith('http')) ? imageBase64 : `data:image/png;base64,${imageBase64}`;
     const res = await axios.post('https://api.openai.com/v1/chat/completions', {
       model,
       messages: [

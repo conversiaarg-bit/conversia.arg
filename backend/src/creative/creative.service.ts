@@ -20,7 +20,7 @@ export const PREMIUM_VIDEO_DIRECTIVE =
 
 // Calidad para imágenes publicitarias (Studio): pro, nítida, sin distorsión ni texto basura.
 export const IMAGE_QUALITY_DIRECTIVE =
-  'Professional advertising creative, ultra sharp and high detail, photorealistic, correct real-world proportions, clean modern composition with clear focal point and balanced negative space, crisp studio-grade lighting, accurate colors, premium polished finish suitable for Meta Ads. Any on-image text must be short, correctly spelled and legible (no gibberish, no distorted letters). NEGATIVE: blurry, low-res, warped or distorted objects, deformed shapes, extra/melted parts, messy composition, ugly artifacts, watermark, gibberish text.';
+  'Professional advertising creative, ultra sharp and high detail, photorealistic, correct real-world proportions, clean modern composition with clear focal point and balanced negative space, crisp studio-grade lighting, accurate colors, premium polished finish suitable for Meta Ads. ALL on-image text MUST be written in SPANISH (Argentina / rioplatense), short, correctly spelled and legible — NEVER in English, no gibberish, no distorted letters. NEGATIVE: english text, blurry, low-res, warped or distorted objects, deformed shapes, extra/melted parts, messy composition, ugly artifacts, watermark, gibberish text.';
 
 // Directiva para VIDEO estilo UGC selfie (iPhone, crudo) — NO cinematográfico.
 export const UGC_VIDEO_DIRECTIVE =
@@ -137,9 +137,10 @@ Devolvé JSON: { "chosenStyle": string (una de las claves de estilo), "concept":
 
     // 1 sola llamada GPT arma los 3 prompts visuales (barato)
     const prompts = await this.openai.chatJSON<Array<{ key: string; prompt: string }>>(
-      'Sos experto en dirección de arte para Meta Ads. Escribís prompts visuales en inglés para un modelo de imágenes.',
+      'Sos experto en dirección de arte para Meta Ads (Argentina). Escribís prompts visuales en inglés para un modelo de imágenes, PERO todo el texto que aparezca DENTRO de la imagen debe estar en ESPAÑOL rioplatense.',
       `Producto: ${JSON.stringify(input.product)}. Objetivo: ${objGuide}. Estilo base: ${styleDesc}.${briefLine}
 Escribí 3 prompts visuales EN INGLÉS, uno por ángulo (${VARIANT_ANGLES.map(v => v.key).join(', ')}). Cada prompt debe contemplar: composición, iluminación, fondo, posición del producto, colores, jerarquía visual, espacio para texto publicitario, sin watermarks, formato ad vertical.
+IMPORTANTE: cualquier texto/copy que aparezca EN la imagen (títulos, ofertas, precio, CTA) debe estar en ESPAÑOL (Argentina), corto y bien escrito — NUNCA en inglés. Especificá en el prompt el texto exacto en español entre comillas.
 JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "..." }, { "key": "social", "prompt": "..." } ]`,
       700,
     );
@@ -181,23 +182,36 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
     return { key: angle.key, label: angle.label, description: angle.desc, prompt: prompt.trim(), url, model: r.model };
   }
 
-  // ── PASO 5: Video (GPT arma la animación según el producto → VideoProvider) ──
+  // ── PASO 5: Video — OpenAI arma un prompt COMPLETO y estructurado para Seedance ──
   async generateVideo(input: { imageBase64: string; product: ProductInfo; style: string; duration: '5' | '10'; videoQuality?: string }) {
-    const animation = await this.openai.chat(
-      'Sos director de cine publicitario. Describís el movimiento de cámara/animación para animar una imagen de producto.',
-      `Producto: ${input.product.name} (categoría: ${input.product.category ?? 'general'}). Estilo: ${input.style}.
-Escribí en INGLÉS una instrucción de animación ESPECÍFICA para este tipo de producto (no genérica). Ej: gastronómico→vapor y movimiento de ingredientes; automotriz→travelling y reflejos; tecnológico→partículas e iluminación cinematográfica; retail→zoom y movimiento del producto. Máximo 2 frases, solo el movimiento.`,
-      150,
+    const secs = Number(input.duration);
+    const styleDesc = STYLES[input.style] ?? STYLES.profesional;
+    // Analyzer: producto exacto como verdad absoluta.
+    const { truth } = await this.extractProductTruth(input.imageBase64);
+    const plan = await this.openai.chatJSON<{ videoPrompt: string; script: string }>(
+      'You are a senior creative director + AI video engineer. You write ONE complete, structured image-to-video prompt for Seedance to produce a Meta Ads UGC-style product ad. The product in the base image is LOCKED: exact design, colors, structure, logos and text — never change or deform it. Realistic, NOT a cinematic movie. Output ONLY valid JSON.',
+      `Product: ${JSON.stringify(input.product)}. Style: ${styleDesc}.${truth}
+Return JSON with "videoPrompt" and "script".
+"videoPrompt" (ENGLISH): a COMPLETE prompt with these LABELED sections, tailored to THIS product:
+Reference: use the base image as the EXACT product reference — do not change the product design, colors or structure.
+Scene: a realistic everyday setting that fits the product (${secs}s).
+Action: a person naturally using/showing the product (realistic hand interaction) OR, if no person fits, subtle real-world product motion.
+Camera: start on a medium shot with a slow push-in toward the product, then a slight handheld movement for realism, end on a close-up of the product details.
+Lighting: natural, realistic, warm, soft shadows.
+Style: UGC-style Meta Ads, realistic, high-quality, NOT cinematic movie style, no text overlays.
+End frame: product clearly visible, clean framing for a CTA.
+Constraints: no product deformation, no fake objects, no text overlays, realistic hand interaction, product identical in every frame.
+"script" (ESPAÑOL rioplatense): la locución hablada que se escucha, clara, natural y vendedora, con un CTA al final, para ~${secs} segundos.`,
+      700,
     );
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
     const r = await this.videoProvider.generate({
       image: input.imageBase64,
-      prompt: `${animation.trim() || 'smooth cinematic camera movement, subtle zoom'} ${PREMIUM_VIDEO_DIRECTIVE}`,
-      duration: Number(input.duration),
-      resolution: q.resolution, audio: q.audio,
+      prompt: `${plan.videoPrompt || 'smooth product ad, slow push-in, subtle handheld realism'} ${UGC_VIDEO_DIRECTIVE}`,
+      duration: secs, resolution: q.resolution, audio: false,
     });
-    const videoUrl = await this.persist(r.url, 'video');
-    return { videoUrl, animationPrompt: animation.trim(), model: r.model, seconds: r.seconds };
+    const videoUrl = q.audio ? await this.muxVoiceover(r.url, plan.script) : await this.persist(r.url, 'video');
+    return { videoUrl, animationPrompt: plan.videoPrompt, script: plan.script, model: r.model, seconds: r.seconds };
   }
 
   // ── UGC: auto-selección de creator/escena/hook/acción según el producto ─────
