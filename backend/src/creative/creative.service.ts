@@ -18,6 +18,10 @@ export const PRESERVE_PRODUCT =
 export const PREMIUM_VIDEO_DIRECTIVE =
   'Treat the input image as REAL FOOTAGE — the products are LOCKED: do NOT modify packaging, logos, colors, text or shapes, do NOT add, remove or duplicate products, do NOT morph or distort labels across frames. Cinematic commercial look: simulate a DSLR/mirrorless camera, 35–50mm lens, f/1.8–f/2.8 shallow depth of field, smooth subtle handheld micro-movements (professional, not shaky, no aggressive motion), natural golden-hour light with soft realistic reflections on the packaging, no overexposure, no artificial glow. Hyper-realistic and commercial-grade, NOT AI-looking, no plastic skin or CGI. Motion physically correct with real-world inertia; lighting consistent across all frames; product label pixels preserved. NEGATIVE: no fake brands, no duplicated products, no text errors, no warping, no flicker, no morphing, no surreal effects, no exaggerated motion. Priority order: (1) product fidelity, (2) realism, (3) smooth motion, (4) cinematic quality.';
 
+// Calidad para imágenes publicitarias (Studio): pro, nítida, sin distorsión ni texto basura.
+export const IMAGE_QUALITY_DIRECTIVE =
+  'Professional advertising creative, ultra sharp and high detail, photorealistic, correct real-world proportions, clean modern composition with clear focal point and balanced negative space, crisp studio-grade lighting, accurate colors, premium polished finish suitable for Meta Ads. Any on-image text must be short, correctly spelled and legible (no gibberish, no distorted letters). NEGATIVE: blurry, low-res, warped or distorted objects, deformed shapes, extra/melted parts, messy composition, ugly artifacts, watermark, gibberish text.';
+
 // Directiva para VIDEO estilo UGC selfie (iPhone, crudo) — NO cinematográfico.
 export const UGC_VIDEO_DIRECTIVE =
   'Authentic raw iPhone selfie footage — handheld, daytime white balance, sharp readable background (NO bokeh, NO cinematic depth of field, NO studio look). The product is LOCKED: keep packaging, logos, colors and text identical in every frame, no morphing, no label distortion, no flicker, no extra/duplicated products. Realistic skin and grain, natural gestures, real-world motion; NOT AI-looking, no plastic skin, no beauty filter, no commercial/DSLR look.';
@@ -149,6 +153,7 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
     const out = await Promise.all(VARIANT_ANGLES.slice(0, limit).map(async angle => {
       const p = (prompts.find(x => x.key === angle.key)?.prompt
         ?? `${input.product.name}, ${styleDesc}, ${angle.desc}, professional Meta Ads creative, photorealistic, no watermark`)
+        + ` ${IMAGE_QUALITY_DIRECTIVE}`
         + (hasRef ? ` ${PRESERVE_PRODUCT}${productTruth}` : '');
       const r = await this.imageProvider.generate({ prompt: p, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages, preserveExact: hasRef });
       const url = await this.persist(r.dataUrl, 'image');
@@ -170,7 +175,7 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
     );
     const hasRef = !!(input.referenceImage || input.referenceImages?.length);
     const { truth: productTruth } = await this.extractProductTruth(hasRef ? (input.referenceImage || input.referenceImages?.[0]) : undefined);
-    const finalPrompt = (prompt.trim() || `${input.product.name}, ${styleDesc}`) + (hasRef ? ` ${PRESERVE_PRODUCT}${productTruth}` : '');
+    const finalPrompt = (prompt.trim() || `${input.product.name}, ${styleDesc}`) + ` ${IMAGE_QUALITY_DIRECTIVE}` + (hasRef ? ` ${PRESERVE_PRODUCT}${productTruth}` : '');
     const r = await this.imageProvider.generate({ prompt: finalPrompt, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages, preserveExact: hasRef });
     const url = await this.persist(r.dataUrl, 'image');
     return { key: angle.key, label: angle.label, description: angle.desc, prompt: prompt.trim(), url, model: r.model };

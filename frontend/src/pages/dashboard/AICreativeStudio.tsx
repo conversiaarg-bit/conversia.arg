@@ -182,9 +182,9 @@ export default function AICreativeStudio() {
     patch({ videoUrl: r.videoUrl }); setCredits(r.credits);
   });
 
-  const genUGC = () => run('ugc', async () => {
+  const genUGC = (duration: '5' | '10' = '10') => run('ugc', async () => {
     const pick = await creativeApi.ugcAuto({ product: s.product });
-    const r = await creativeApi.ugc({ product: s.product, ...pick, duration: '10', referenceImage: s.imageBase64, format: s.format, videoQuality: vq });
+    const r = await creativeApi.ugc({ product: s.product, ...pick, duration, referenceImage: s.imageBase64, format: s.format, videoQuality: vq });
     patch({ videoUrl: r.videoUrl, selectedImage: s.selectedImage ?? { key: 'ugc', label: 'UGC', description: r.creator?.name ?? '', prompt: '', url: r.imageUrl, model: '' } });
     setCredits(r.credits);
   });
@@ -237,7 +237,7 @@ export default function AICreativeStudio() {
                 {step === 4 && <StepImagen s={s} costs={costs} setFormat={(f: Fmt) => patch({ format: f })} setBrief={(b: string) => patch({ brief: b })} onGen={(q?: 'standard' | 'premium') => withConfirm(costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm(costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => patch({ selectedImage: v })} onDownload={(v: ImageVariant) => downloadImage(v.url, `creativo-${v.key}`)} onBack={() => goto(3)} onNext={() => goto(5)} />}
                 {step === 5 && (() => {
                   const vqOpt = videoQualities.find(q => q.key === vq) ?? videoQualities[0];
-                  return <StepVideo s={s} vqOptions={videoQualities} vq={vq} setVq={setVq} onGen={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar video ${d}s (${vqOpt.label})`, () => genVideo(d))} onUGC={() => withConfirm(vqOpt.credits10, `Generar UGC (${vqOpt.label})`, genUGC)} onBack={() => goto(4)} onNext={() => goto(6)} />;
+                  return <StepVideo s={s} vqOptions={videoQualities} vq={vq} setVq={setVq} onGen={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar video ${d}s (${vqOpt.label})`, () => genVideo(d))} onUGC={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar UGC ${d}s (${vqOpt.label})`, () => genUGC(d))} onBack={() => goto(4)} onNext={() => goto(6)} />;
                 })()}
                 {step === 6 && <StepCopy s={s} costs={costs} onGen={() => withConfirm(costs.copy, 'Generar copy', genCopy)} onPick={(c: CopyVariant) => patch({ selectedCopy: c })} onBack={() => goto(5)} onNext={() => { saveToHistory(); goto(7); }} />}
                 {step === 7 && <StepResultado s={s} onRegenImage={() => goto(4)} onRegenVideo={() => goto(5)} onRegenCopy={genCopy} onCampaign={() => nav('/dashboard/new-campaign', { state: { fromStudio: { name: s.product?.name || '', desc: s.product?.description || '', imageUrl: s.selectedImage?.url, videoUrl: s.videoUrl, objective: s.objective, strategy: s.strategy, copy: s.selectedCopy } } })} onNew={reset} />}
@@ -622,6 +622,17 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
         ))}
       </div>
 
+      {/* Usar la imagen propia SIN generar (0 créditos) */}
+      {(s.imageBase64 || s.images?.[0]) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 12px', background: C.surface, border: `1px solid ${s.selectedImage?.model === 'original' ? C.accent : C.border}`, borderRadius: 10, flexWrap: 'wrap' }}>
+          <img src={s.imageBase64 || s.images[0]} alt="" style={{ width: 40, height: 40, borderRadius: 7, objectFit: 'cover' }} />
+          <span style={{ fontSize: 12.5, color: C.textMuted, flex: 1, minWidth: 160 }}>¿Ya tenés tu imagen lista? Usala tal cual, sin generar nada.</span>
+          <Btn small ghost={s.selectedImage?.model !== 'original'} onClick={() => onPick({ key: 'own', label: 'Mi imagen', description: 'Tu imagen, sin generar (0 créditos)', prompt: '', url: s.imageBase64 || s.images[0], model: 'original' })}>
+            {s.selectedImage?.model === 'original' ? '✓ Usando mi imagen' : '🖼️ Usar mi imagen (0 créditos)'}
+          </Btn>
+        </div>
+      )}
+
       {!has ? (
         <div style={{ display: 'grid', placeItems: 'center', padding: '48px 0', border: `1.5px dashed ${C.border}`, borderRadius: 16, background: C.surface }}>
           <div style={{ fontSize: 34 }}>🎨</div>
@@ -706,9 +717,16 @@ function StepVideo({ s, vqOptions, vq, setVq, onGen, onUGC, onBack, onNext }: an
             <>
               {QualitySelector}
               <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 4 }}>UGC automático</div>
-              <p style={{ fontSize: 13, color: C.textMuted, marginTop: 0 }}>La IA elige un creador virtual, el escenario y el guion según tu producto, y graba un Reel de 10s (persona 100% sintética).</p>
-              <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 10 }}>Costo: <b style={{ color: C.accent }}>{cur?.credits10} créditos</b></div>
-              <Btn onClick={onUGC}>🎭 {s.videoUrl ? 'Regenerar' : 'Generar'} UGC automático</Btn>
+              <p style={{ fontSize: 13, color: C.textMuted, marginTop: 0 }}>La IA elige un creador virtual, el escenario y el guion según tu producto, y graba un Reel (persona 100% sintética).</p>
+              <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 8 }}>Duración</div>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                {(['5', '10'] as const).map(d => (
+                  <button key={d} onClick={() => setDur(d)} style={{ flex: 1, padding: '12px', borderRadius: 10, cursor: 'pointer', background: dur === d ? C.accentDim : C.surface, border: `1.5px solid ${dur === d ? C.accent : C.border}`, color: C.text }}>
+                    <b>{d}s</b> <span style={{ fontSize: 11, color: C.textMuted }}>· {d === '10' ? cur?.credits10 : cur?.credits5} créditos</span>
+                  </button>
+                ))}
+              </div>
+              <Btn onClick={() => onUGC(dur)}>🎭 {s.videoUrl ? 'Regenerar' : 'Generar'} UGC automático</Btn>
             </>
           )}
         </div>
