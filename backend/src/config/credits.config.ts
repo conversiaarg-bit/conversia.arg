@@ -30,7 +30,7 @@ const REAL_COST_PER_CREDIT = n(process.env.REAL_COST_PER_CREDIT, 0.05);
 export const VIDEO_QUALITY = {
   economico: { resolution: '720p',  audio: false, usdPerSec: 0.026, label: '720p · sin audio' },
   hd:        { resolution: '1080p', audio: false, usdPerSec: 0.059, label: '1080p · sin audio' },
-  hd_audio:  { resolution: '1080p', audio: true,  usdPerSec: 0.117, label: '1080p · con audio' },
+  hd_audio:  { resolution: '1080p', audio: true,  usdPerSec: 0.062, label: '1080p · con voz' },
 } as const;
 export type VideoQuality = keyof typeof VIDEO_QUALITY;
 export const DEFAULT_VIDEO_QUALITY: VideoQuality = (process.env.VIDEO_QUALITY_DEFAULT as VideoQuality) || 'economico';

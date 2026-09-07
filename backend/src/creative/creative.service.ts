@@ -359,14 +359,14 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     const { fragments, rest } = expandCommands(input.brief);
     const cmdLine = [...fragments, rest].filter(Boolean).join('; ');
     const plan = await this.openai.chatJSON<{ imagePrompt: string; videoPrompt: string; script: string }>(
-      'You are a prompt engineer for iPhone-SELFIE UGC ads (Creatify style). The look is RAW, handheld, authentic phone footage — NOT commercial, NOT DSLR, NOT cinematic, NO bokeh. The product is a LOCKED asset: keep its packaging, colors, logos, materials and text EXACT, no redesign or relabeling. You invent only the person, their outfit and their everyday room. Output ONLY valid JSON.',
+      'You are a prompt engineer for META ADS (Instagram/Facebook Reels & Stories) in iPhone-SELFIE UGC style (Creatify style). Goal: a scroll-stopping vertical 9:16 ad — a strong hook in the first second, the person talking to camera, and a clear CTA. The look is RAW, handheld, authentic phone footage — NOT commercial, NOT DSLR, NOT cinematic, NO bokeh. The product is a LOCKED asset: keep its packaging, colors, logos, materials and text EXACT, no redesign or relabeling; if it is a COMBO show ALL its products. You invent only the person, their outfit and their everyday room. Output ONLY valid JSON.',
       `Product: ${JSON.stringify(input.product)}. Character base: ${characterDesc}.${productTruth}${cmdLine ? '\nUser directives: ' + cmdLine + '.' : ''}
 Fill this TEMPLATE for THIS product and return JSON with keys "imagePrompt", "videoPrompt", "script":
 
 "imagePrompt" (ENGLISH, single flowing line using → arrows, MUST follow this exact structure):
-handheld iPhone front-camera selfie, 9:16, arm-stretched selfie perspective, slightly off-center framing with a tiny natural shake, real casual young energy → the product must be kept EXACT: same packaging shapes, colors, logos, materials and text, no redesign or relabeling → one <specific person matching the character base, age, vibe>, bright friendly expression, mid-sentence mouth slightly open, direct eye contact with the lens → a unique specific outfit <describe it> → everyday room behind them fully visible and readable (posters, backpack, shelves, normal clutter), no blur, no bokeh → the person is actively taking the selfie while holding ONE product bag in ONE hand with a casual tilted grip, the other hand holding the phone, weight on one hip, torso slightly rotated, small natural talk-gesture from the wrist → soft natural daylight from a window, daytime white balance, raw iPhone texture, realistic skin and grain, no studio look, no heavy contrast, no cinematic depth of field, authentic handheld snapshot feel; NEGATIVE: stiff pose, mannequin, empty hands, two-hand product presentation, catalog grip, posed smile, studio lighting, strong sun, yellow glow, bokeh, blurry background, plastic skin, beauty filter, commercial ad, split screen, redesigned product, extra fingers, third-person photo, DSLR portrait, photographer standing in front of subject.
+handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is a WIDE MEDIUM selfie showing the person from the head down to the waist/hips with room around them (NOT a tight face close-up), slightly off-center framing with a tiny natural shake, real casual young energy → the product must be kept EXACT: same packaging shapes, colors, logos, materials and text, no redesign or relabeling → one <specific person matching the character base, age, vibe>, bright friendly expression, mid-sentence mouth slightly open, direct eye contact with the lens → a unique specific outfit <describe it> → everyday room behind them clearly visible and readable (posters, backpack, shelves, normal clutter) AND the FULL set of products from the combo reference arranged on a desk/shelf beside or behind them, every product bag visible and readable, no blur, no bokeh → the person is actively taking the selfie while holding ONE product bag from the combo in ONE hand at chest height with a casual tilted grip (bag fully in frame), the other hand holding the phone, weight on one hip, torso slightly rotated, small natural talk-gesture from the wrist → soft natural daylight from a window, daytime white balance, raw iPhone texture, realistic skin and grain, no studio look, no heavy contrast, no cinematic depth of field, authentic handheld snapshot feel; NEGATIVE: extreme close-up, tight face crop, cropped head, product out of frame, stiff pose, mannequin, empty hands, two-hand product presentation, catalog grip, posed smile, studio lighting, strong sun, yellow glow, bokeh, blurry background, plastic skin, beauty filter, commercial ad, split screen, redesigned product, extra fingers, third-person photo, DSLR portrait, photographer standing in front of subject.
 
-"videoPrompt" (ENGLISH): Selfie Talking Head (${secs}s): 9:16 iPhone front-camera selfie talking-head of this SAME person holding the product speaking "<the script line below, in the ad's language>", engaging eye contact with the lens, natural gestures, daytime white balance, sharp background, handheld. The generated video includes 2 B-rolls: a simple product-only cutaway in daytime white balance; then the same person using/enjoying the product naturally, handheld, not a showroom.
+"videoPrompt" (ENGLISH): Selfie Talking Head (${secs}s) for a Meta Ads Reel: 9:16 iPhone front-camera selfie talking-head of this SAME person holding one product bag speaking "<the script line below, in the ad's language>", engaging eye contact with the lens, natural gestures, daytime white balance, sharp background, handheld. The generated video includes 2 B-rolls: (1) a product-only cutaway showing ALL the products of the combo TOGETHER on a table (every bag visible and readable), daytime white balance; then (2) the same person using/enjoying the product naturally, handheld, not a showroom. Keep every product's packaging identical across all frames.
 
 "script": una frase corta, natural y vendedora en español rioplatense que la persona dice a cámara sobre el producto (con un CTA al final).`,
       900,
@@ -387,15 +387,46 @@ handheld iPhone front-camera selfie, 9:16, arm-stretched selfie perspective, sli
       return { productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script, imageUrl, videoUrl: null, videoPending: true };
     }
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
+    // Seedance SIEMPRE sin su audio (ruido ambiente). Si la calidad pide audio, le
+    // ponemos LOCUCIÓN (TTS del guion) y la mezclamos → la persona "dice" el guion.
     const vid = await this.videoProvider.generate({
       image: img.dataUrl,
       prompt: `${plan.videoPrompt || 'natural UGC selfie, person talking to camera holding the product'} ${UGC_VIDEO_DIRECTIVE}`,
-      duration: secs, resolution: q.resolution, audio: q.audio,
+      duration: secs, resolution: q.resolution, audio: false,
     });
+    const videoUrl = q.audio
+      ? await this.muxVoiceover(vid.url, plan.script)
+      : await this.persist(vid.url, 'video');
     return {
       productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script,
-      imageUrl, videoUrl: await this.persist(vid.url, 'video'), model: vid.model, seconds: vid.seconds,
+      imageUrl, videoUrl, model: vid.model, seconds: vid.seconds,
     };
+  }
+
+  // Mezcla una locución (TTS del guion) sobre el video → la persona "dice" el guion.
+  private async muxVoiceover(videoUrl: string, script?: string): Promise<string> {
+    if (!script?.trim()) return this.persist(videoUrl, 'video');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vo_'));
+    try {
+      const dv = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 120_000 });
+      const vf = path.join(tmp, 'v.mp4'); fs.writeFileSync(vf, Buffer.from(dv.data as ArrayBuffer));
+      const speech = await this.openai.speech(script);
+      const ab = speech.replace(/^data:audio\/\w+;base64,/, '');
+      const af = path.join(tmp, 'a.mp3'); fs.writeFileSync(af, Buffer.from(ab, 'base64'));
+      const out = path.join(tmp, 'out.mp4');
+      await new Promise<void>((res, rej) => {
+        ffmpeg().input(vf).input(af)
+          .outputOptions(['-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-shortest', '-movflags', '+faststart'])
+          .output(out).on('end', () => res()).on('error', err => rej(err)).run();
+      });
+      const b64 = fs.readFileSync(out).toString('base64');
+      return await this.persist(`data:video/mp4;base64,${b64}`, 'video');
+    } catch (e: any) {
+      this.logger.warn(`muxVoiceover falló (${e.message}) — devuelvo video sin voz`);
+      return this.persist(videoUrl, 'video');
+    } finally {
+      try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
   }
 
   // ── Voz (TTS real) ───────────────────────────────────────────────────────────
