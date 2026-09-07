@@ -25,6 +25,9 @@ export const creativeApi = {
   analyze: (body: { name?: string; description?: string; imageBase64?: string }) =>
     D<ProductInfo>(api.post('/creative/analyze', body, { timeout: 60_000 })),
 
+  campaignStrategy: (body: { name?: string; description?: string; objective?: string }) =>
+    D<any>(api.post('/creative/campaign-strategy', body, { timeout: 60_000 })),
+
   strategy: (body: { product: ProductInfo; objective: string; style: string }) =>
     D<Strategy>(api.post('/creative/strategy', body, { timeout: 60_000 })),
 

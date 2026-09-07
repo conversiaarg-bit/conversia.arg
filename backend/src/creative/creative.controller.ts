@@ -67,6 +67,14 @@ export class CreativeController {
     return { free: true, remaining };
   }
 
+  // Estrategia de campaña (OpenAI) — reemplaza el /ai/analyze-campaign (Anthropic, sin key).
+  @Post('campaign-strategy') @HttpCode(HttpStatus.OK)
+  async campaignStrategy(@Body() body: { name?: string; description?: string; objective?: string }, @Request() req: any) {
+    const r = await this.svc.campaignStrategy(body);
+    await this.cost.log({ userId: req.user.id, provider: 'openai', model: PROVIDERS.openaiChatModel, operation: 'campaign_strategy', estimatedProviderCostUsd: 0.0008, creditsConsumed: 0, status: 'completed' }).catch(() => {});
+    return r;
+  }
+
   // Debug (solo lectura): últimos errores de generación de IA.
   @Get('debug/errors')
   async debugErrors() { return { errors: await this.cost.recentErrors(10) }; }

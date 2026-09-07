@@ -397,6 +397,18 @@ Return JSON with three keys:
     return { audioUrl };
   }
 
+  // ── Estrategia de campaña (OpenAI) — para el paso "IA analiza" de Nueva Campaña ──
+  async campaignStrategy(input: { name?: string; description?: string; objective?: string }): Promise<any> {
+    const obj = OBJECTIVES[(input.objective || '').toLowerCase()] ?? 'conversión directa a venta por WhatsApp';
+    return this.openai.chatJSON<any>(
+      'Sos estratega de Meta Ads para LATAM. Escribís en español rioplatense, directo y persuasivo.',
+      `Producto: ${input.name || 'Producto'}. Descripción: ${input.description || input.name || ''}. Objetivo: ${obj}.
+Devolvé JSON de estrategia de campaña:
+{ "hook": "gancho corto de apertura (español)", "headline": "titular del anuncio", "cta": "llamado a la acción", "audience": { "description": "quién es el público", "age_min": 18, "age_max": 45 }, "format": "9_16", "styleNotes": "notas de estilo visual", "whatsappMessage": "primer mensaje sugerido para el cliente" }`,
+      700,
+    );
+  }
+
   // ── Video final: ensambla las escenas (9:16 1080x1920) en un solo MP4 ───────
   async assembleFinalVideo(videoUrls: string[], musicUrl?: string): Promise<{ videoUrl: string }> {
     const urls = (videoUrls || []).filter(Boolean);

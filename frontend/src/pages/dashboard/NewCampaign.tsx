@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { creativeApi } from '../../api/creative';
 import { Spinner } from '../../components/ui';
 import FileUploadZone, { type UploadFile } from '../../components/ui/FileUploadZone';
 import { uploadsApi } from '../../api/uploads';
-import { aiApi } from '../../api/ai';
 import { campaignsApi, type MetaAccount } from '../../api/campaigns';
 import { generateCreativeImage } from '../../utils/creativeCanvas';
 import { editProductImage, generateProductImage } from '../../utils/openaiImageEdit';
@@ -133,6 +133,36 @@ export default function NewCampaign() {
   const [fluxError, setFluxError] = useState('');
   const [productPhotoUrl, setProductPhotoUrl] = useState<string | null>(null);
 
+  // Autocompletar cuando venimos de "Crear campaña" del Studio (Creativos IA).
+  const location = useLocation();
+  useEffect(() => {
+    const fs = (location.state as any)?.fromStudio;
+    if (!fs) return;
+    setForm(p => ({ ...p, name: fs.name || p.name, desc: fs.desc || p.desc, objective: fs.objective || p.objective }));
+    const mk = (url: string, video: boolean): UploadFile => ({
+      file: new File([], video ? 'creativo.mp4' : 'creativo.png', { type: video ? 'video/mp4' : 'image/png' }),
+      preview: url, progress: 100, status: 'done', url,
+    });
+    const mains: UploadFile[] = [];
+    if (fs.videoUrl) mains.push(mk(fs.videoUrl, true));
+    if (fs.imageUrl) { if (fs.videoUrl) setExtraFiles([mk(fs.imageUrl, false)]); else mains.push(mk(fs.imageUrl, false)); }
+    if (mains.length) setMainFiles(mains);
+    if (fs.imageUrl) { setCreativeImages([fs.imageUrl]); setProductPhotoUrl(fs.imageUrl); }
+    // Estrategia ya lista (del Studio) → el paso "IA analiza" queda precompletado, sin re-llamar.
+    if (fs.strategy || fs.copy) {
+      setStrategy({
+        hook: fs.copy?.title || fs.strategy?.angle || fs.name || 'Oferta especial',
+        headline: fs.copy?.title || fs.name || 'Oferta especial',
+        cta: fs.copy?.cta || 'Escribinos por WhatsApp',
+        audience: { description: 'Compradores online 18-45', age_min: 18, age_max: 45 },
+        format: '9_16',
+        styleNotes: fs.strategy?.toneNotes || fs.strategy?.concept || 'Estilo comercial, producto real',
+        whatsappMessage: 'Hola, vi tu anuncio. ¿Tenés disponibilidad?',
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleUpload = useCallback(async (files: File[], onProgress: (pct: number) => void) => {
     const res = await uploadsApi.upload(files, onProgress);
     return (res.data as any)?.data?.files ?? [];
@@ -184,12 +214,8 @@ export default function NewCampaign() {
     setAnalyzeError('');
     setStrategy(null);
     try {
-      const res = await aiApi.analyzeCampaign(
-        form.name || 'Producto sin nombre',
-        form.desc || form.name,
-        form.objective,
-      );
-      const data = (res.data as any)?.data ?? res.data;
+      // OpenAI (el /ai/* usa Anthropic sin key). Devuelve la estrategia directo.
+      const data = await creativeApi.campaignStrategy({ name: form.name || 'Producto sin nombre', description: form.desc || form.name, objective: form.objective });
       setStrategy(data);
     } catch {
       setStrategy({

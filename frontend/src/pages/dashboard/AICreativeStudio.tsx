@@ -240,7 +240,7 @@ export default function AICreativeStudio() {
                   return <StepVideo s={s} vqOptions={videoQualities} vq={vq} setVq={setVq} onGen={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar video ${d}s (${vqOpt.label})`, () => genVideo(d))} onUGC={() => withConfirm(vqOpt.credits10, `Generar UGC (${vqOpt.label})`, genUGC)} onBack={() => goto(4)} onNext={() => goto(6)} />;
                 })()}
                 {step === 6 && <StepCopy s={s} costs={costs} onGen={() => withConfirm(costs.copy, 'Generar copy', genCopy)} onPick={(c: CopyVariant) => patch({ selectedCopy: c })} onBack={() => goto(5)} onNext={() => { saveToHistory(); goto(7); }} />}
-                {step === 7 && <StepResultado s={s} onRegenImage={() => goto(4)} onRegenVideo={() => goto(5)} onRegenCopy={genCopy} onCampaign={() => nav('/dashboard/new-campaign')} onNew={reset} />}
+                {step === 7 && <StepResultado s={s} onRegenImage={() => goto(4)} onRegenVideo={() => goto(5)} onRegenCopy={genCopy} onCampaign={() => nav('/dashboard/new-campaign', { state: { fromStudio: { name: s.product?.name || '', desc: s.product?.description || '', imageUrl: s.selectedImage?.url, videoUrl: s.videoUrl, objective: s.objective, strategy: s.strategy, copy: s.selectedCopy } } })} onNew={reset} />}
               </>
             )}
           </main>
