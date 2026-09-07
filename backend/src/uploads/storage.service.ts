@@ -15,6 +15,13 @@ export interface StoredFile {
   mimetype: string;
 }
 
+// Carpeta de uploads: si hay un Volume de Railway montado (RAILWAY_VOLUME_MOUNT_PATH),
+// los archivos van ahí (persisten entre deploys, sin pagar otro proveedor). Si no, disco efímero.
+export function resolveUploadsDir(): string {
+  const vol = process.env.UPLOADS_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH;
+  return vol ? join(vol, 'uploads') : join(process.cwd(), 'uploads');
+}
+
 @Injectable()
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
@@ -22,11 +29,14 @@ export class StorageService implements OnModuleInit {
   private bucket = '';
   private s3BaseUrl = '';
   private useS3 = false;
-  private uploadsDir = join(process.cwd(), 'uploads');
+  private volumePath = process.env.UPLOADS_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || '';
+  private uploadsDir = resolveUploadsDir();
 
-  // true si hay storage en la nube (S3/R2). Si es false, conviene guardar la media
-  // como data URL (persiste en DB) en vez de disco efímero que se borra en cada deploy.
+  // true si hay storage en la nube (S3/R2).
   get cloud(): boolean { return this.useS3; }
+  // true si la media sobrevive un redeploy: S3/R2 O un Volume de Railway montado.
+  // Si es false (disco efímero), conviene guardar como data URL (persiste en DB).
+  get durable(): boolean { return this.useS3 || !!this.volumePath; }
 
   onModuleInit() {
     const bucket = process.env.AWS_S3_BUCKET;
@@ -49,7 +59,9 @@ export class StorageService implements OnModuleInit {
       this.logger.log(`☁️  StorageService: S3 mode (bucket=${bucket})`);
     } else {
       if (!existsSync(this.uploadsDir)) mkdirSync(this.uploadsDir, { recursive: true });
-      this.logger.log('💾 StorageService: disk mode (set AWS_S3_BUCKET to enable S3)');
+      this.logger.log(this.volumePath
+        ? `💽 StorageService: Volume mode (persistente en ${this.uploadsDir})`
+        : '💾 StorageService: disk mode EFÍMERO (montá un Volume de Railway o configurá AWS_S3_BUCKET para persistir)');
     }
   }
 

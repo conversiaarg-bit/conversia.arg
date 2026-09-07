@@ -4,11 +4,11 @@ import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WinstonModule } from 'nest-winston';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { autoMigrate } from './database/auto-migrate';
+import { resolveUploadsDir } from './uploads/storage.service';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { createWinstonLogger } from './common/logger/winston.config';
@@ -16,7 +16,7 @@ import { createWinstonLogger } from './common/logger/winston.config';
 async function bootstrap() {
   await autoMigrate();
 
-  const uploadsDir = join(process.cwd(), 'uploads');
+  const uploadsDir = resolveUploadsDir();
   if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {

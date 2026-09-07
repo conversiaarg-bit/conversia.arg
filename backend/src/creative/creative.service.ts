@@ -167,7 +167,8 @@ Escribí en INGLÉS una instrucción de animación ESPECÍFICA para este tipo de
       duration: Number(input.duration),
       resolution: q.resolution, audio: q.audio,
     });
-    return { videoUrl: r.url, animationPrompt: animation.trim(), model: r.model, seconds: r.seconds };
+    const videoUrl = await this.persist(r.url, 'video');
+    return { videoUrl, animationPrompt: animation.trim(), model: r.model, seconds: r.seconds };
   }
 
   // ── UGC: auto-selección de creator/escena/hook/acción según el producto ─────
@@ -214,7 +215,7 @@ Devolvé JSON: { "creatorKey": "<una key>", "scene": "escenario en inglés acord
     const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: animation, duration: Number(duration), resolution: q.resolution, audio: q.audio });
 
     return {
-      imageUrl, videoUrl: vid.url, model: vid.model, seconds: vid.seconds,
+      imageUrl, videoUrl: await this.persist(vid.url, 'video'), model: vid.model, seconds: vid.seconds,
       creator: { key: creator.key, name: creator.name },
       script: { hook: input.hook ?? '', action: input.action ?? '', cta: input.cta ?? '' },
     };
@@ -269,7 +270,7 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     const dur = (input.scene.seconds ?? 8) >= 9 ? 10 : 5;
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
     const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: input.scene.videoPrompt || 'natural UGC movement, person interacting with the product', duration: dur, resolution: q.resolution, audio: q.audio });
-    return { imageUrl, videoUrl: vid.url, model: vid.model, seconds: vid.seconds, sceneKey: input.scene.key };
+    return { imageUrl, videoUrl: await this.persist(vid.url, 'video'), model: vid.model, seconds: vid.seconds, sceneKey: input.scene.key };
   }
 
   // ── Voz (TTS real) ───────────────────────────────────────────────────────────
@@ -344,22 +345,32 @@ JSON: [ { "key": "conversion", "title": "", "body": "", "cta": "", "description"
   }
 
   // ── Persistencia de archivos (base64 → StorageService → URL) ────────────────
-  private async persist(dataUrl: string, type: 'image' | 'video'): Promise<string> {
+  private async persist(src: string, type: 'image' | 'video'): Promise<string> {
     try {
-      const m = dataUrl.match(/^data:(.+?);base64,(.*)$/);
-      if (!m) return dataUrl; // ya es URL
-      // Sin storage en la nube: devolvemos el data URL directo. Así la imagen NO depende
-      // del disco efímero (que se borra al redeployar) — persiste en la respuesta y en la DB,
-      // se ve siempre y se descarga bien. (Con R2/S3 configurado, se sube y se usa la URL.)
-      if (!this.storage.cloud) return dataUrl;
-      const buffer = Buffer.from(m[2], 'base64');
-      const mime = m[1];
-      const ext = mime.includes('png') ? 'png' : mime.includes('mp4') ? 'mp4' : (mime.includes('mpeg') || mime.includes('mp3')) ? 'mp3' : (mime.includes('wav') ? 'wav' : 'jpg');
+      // Sin storage durable (disco efímero que se borra al redeployar): devolvemos tal cual.
+      // Data URL → persiste en la respuesta y en la DB; URL externa → se usa directo.
+      // Con Volume de Railway o S3/R2: guardamos el archivo y devolvemos su URL (queda en Railway).
+      if (!this.storage.durable) return src;
+      let buffer: Buffer; let mime: string;
+      const m = src.match(/^data:(.+?);base64,(.*)$/);
+      if (m) {
+        mime = m[1];
+        buffer = Buffer.from(m[2], 'base64');
+      } else if (/^https?:\/\//i.test(src)) {
+        // Re-hostear media externa (ej. video de fal/Seedance) → copia local persistente
+        const resp = await axios.get(src, { responseType: 'arraybuffer', timeout: 120_000 });
+        buffer = Buffer.from(resp.data as ArrayBuffer);
+        mime = (resp.headers['content-type'] as string) || (type === 'video' ? 'video/mp4' : 'image/jpeg');
+      } else {
+        return src;
+      }
+      const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : mime.includes('mp4') ? 'mp4'
+        : (mime.includes('mpeg') || mime.includes('mp3')) ? 'mp3' : mime.includes('wav') ? 'wav' : (type === 'video' ? 'mp4' : 'jpg');
       const saved = await this.storage.save(buffer, `creative_${Date.now()}.${ext}`, mime);
       return saved.url;
     } catch (e: any) {
-      this.logger.warn(`persist falló (${e.message}) — devuelvo data URL`);
-      return dataUrl; // fallback: el front igual lo renderiza
+      this.logger.warn(`persist falló (${e.message}) — devuelvo origen`);
+      return src; // fallback: el front igual lo renderiza / reproduce
     }
   }
 
