@@ -30,8 +30,9 @@ export class OpenAIImageProvider implements ImageProvider {
     const headers = { Authorization: `Bearer ${this.key()}` };
 
     // Con foto(s) de referencia → images/edits (preserva packaging/logo/forma).
-    // gpt-image-1 acepta VARIAS imágenes (las compone). Máx 8 para no excedernos.
-    const refs = (input.referenceImages?.length ? input.referenceImages : (input.referenceImage ? [input.referenceImage] : [])).slice(0, 8);
+    // gpt-image-1 acepta VARIAS imágenes (las compone). Máx 16 (límite del modelo) → soporta combos de 10+.
+    const MAX_REFS = Number(process.env.MAX_REFERENCE_IMAGES ?? 16);
+    const refs = (input.referenceImages?.length ? input.referenceImages : (input.referenceImage ? [input.referenceImage] : [])).slice(0, MAX_REFS);
     if (refs.length) {
       try {
         const form = new FormData();
