@@ -137,12 +137,16 @@ Devolvé JSON: { "chosenStyle": string (una de las claves de estilo), "concept":
 
     // 1 sola llamada GPT arma los 3 prompts visuales (barato)
     const prompts = await this.openai.chatJSON<Array<{ key: string; prompt: string }>>(
-      'Sos experto en dirección de arte para Meta Ads (Argentina). Escribís prompts visuales en inglés para un modelo de imágenes, PERO todo el texto que aparezca DENTRO de la imagen debe estar en ESPAÑOL rioplatense.',
+      'Sos director de arte de ADS de e-commerce (MercadoLibre / Meta Ads, Argentina). Escribís prompts visuales en INGLÉS para un modelo de imágenes, PERO todo texto que aparezca DENTRO de la imagen va en ESPAÑOL rioplatense. El producto es un asset EXACTO: no lo rediseñes.',
       `Producto: ${JSON.stringify(input.product)}. Objetivo: ${objGuide}. Estilo base: ${styleDesc}.${briefLine}
-Escribí 3 prompts visuales EN INGLÉS, uno por ángulo (${VARIANT_ANGLES.map(v => v.key).join(', ')}). Cada prompt debe contemplar: composición, iluminación, fondo, posición del producto, colores, jerarquía visual, espacio para texto publicitario, sin watermarks, formato ad vertical.
-IMPORTANTE: cualquier texto/copy que aparezca EN la imagen (títulos, ofertas, precio, CTA) debe estar en ESPAÑOL (Argentina), corto y bien escrito — NUNCA en inglés. Especificá en el prompt el texto exacto en español entre comillas.
+Escribí 3 prompts visuales EN INGLÉS (uno por ángulo: ${VARIANT_ANGLES.map(v => v.key).join(', ')}). Cada prompt debe describir un AD de e-commerce de alta conversión con:
+- El PRODUCTO EXACTO de la referencia (misma estructura, materiales, colores, proporciones — no redibujar).
+- Escena realista con fondo contextual acorde al producto, iluminación comercial, sombras suaves, foto de producto hiperrealista (no arte, no abstracto).
+- OVERLAYS DE TEXTO EN ESPAÑOL, corto y bien escrito, indicando el texto EXACTO entre comillas: un TITULAR de venta, el PRECIO si el producto lo tiene (usá "$${input.product.price ?? ''}" ${input.product.oldPrice ? 'y precio anterior' : ''}), 2-3 BENEFICIOS clave, y un CTA.
+- Íconos minimalistas de los beneficios principales.
+- Jerarquía visual clara, espacio limpio para el texto, formato ad vertical, sin watermark, SIN texto en inglés, sin deformar el producto.
 JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "..." }, { "key": "social", "prompt": "..." } ]`,
-      700,
+      800,
     );
 
     // Product Analyzer (1 sola vez): verdad literal del producto para inyectar en los 3 prompts.
@@ -417,7 +421,7 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
       duration: secs, resolution: q.resolution, audio: false,
     });
     const videoUrl = q.audio
-      ? await this.muxVoiceover(vid.url, finalScript)
+      ? await this.muxVoiceover(vid.url, finalScript, this.voiceKeyFor(input.avatarDesc))
       : await this.persist(vid.url, 'video');
     return {
       productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: finalScript,
@@ -425,14 +429,21 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
     };
   }
 
+  // Voz según el género de la persona (del avatarDesc). Default: femenina natural.
+  private voiceKeyFor(avatarDesc?: string): string {
+    const g = (avatarDesc || '').toLowerCase();
+    if (/\b(hombre|masculino|var[oó]n|chico|muchacho|masc|male|se[ñn]or)\b/.test(g)) return 'masc_natural';
+    return 'fem_natural';
+  }
+
   // Mezcla una locución (TTS del guion) sobre el video → la persona "dice" el guion.
-  private async muxVoiceover(videoUrl: string, script?: string): Promise<string> {
+  private async muxVoiceover(videoUrl: string, script?: string, voiceKey = 'fem_natural'): Promise<string> {
     if (!script?.trim()) return this.persist(videoUrl, 'video');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vo_'));
     try {
       const dv = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 120_000 });
       const vf = path.join(tmp, 'v.mp4'); fs.writeFileSync(vf, Buffer.from(dv.data as ArrayBuffer));
-      const speech = await this.openai.speech(script);
+      const speech = await this.openai.speech(script, voiceKey);
       const ab = speech.replace(/^data:audio\/\w+;base64,/, '');
       const af = path.join(tmp, 'a.mp3'); fs.writeFileSync(af, Buffer.from(ab, 'base64'));
       const out = path.join(tmp, 'out.mp4');
