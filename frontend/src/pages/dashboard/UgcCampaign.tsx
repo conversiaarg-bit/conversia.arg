@@ -115,7 +115,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     try {
       const res = await creativeApi.ugcOneShot({ product: { name: name || 'Producto' }, referenceImage: productRef, referenceImages: refsArr, avatarImage: selectedAvatar, avatarDesc: avatar, brief: cmd, quality: hd ? 'premium' : undefined, videoQuality: vq, format, duration: videoDur });
       setCredits(res.credits);
-      setPipe({ imagePrompt: res.imagePrompt, videoPrompt: res.videoPrompt, script: res.script, imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined });
+      setPipe({ productData: (res as any).productData, imagePrompt: res.imagePrompt, videoPrompt: res.videoPrompt, script: res.script, imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined });
       pushMsg('copilot', res.videoUrl ? '🎥 Video listo — descargalo desde el nodo Video.' : '🖼️ Imagen lista (el video queda pendiente hasta activar Seedance).');
     } catch (e: any) {
       const sc = e?.response?.data?.message === 'SIN_CREDITOS';

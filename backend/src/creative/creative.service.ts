@@ -131,13 +131,16 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
       700,
     );
 
+    // Product Analyzer (1 sola vez): verdad literal del producto para inyectar en los 3 prompts.
+    const hasRef = !!(input.referenceImage || input.referenceImages?.length);
+    const { truth: productTruth } = await this.extractProductTruth(hasRef ? (input.referenceImage || input.referenceImages?.[0]) : undefined);
+
     // Las 3 variantes se generan EN PARALELO (antes secuencial ~60s → ahora ~20s;
     // clave para no pasarse del timeout del proxy de Vercel).
     const out = await Promise.all(VARIANT_ANGLES.slice(0, limit).map(async angle => {
-      const hasRef = !!(input.referenceImage || input.referenceImages?.length);
       const p = (prompts.find(x => x.key === angle.key)?.prompt
         ?? `${input.product.name}, ${styleDesc}, ${angle.desc}, professional Meta Ads creative, photorealistic, no watermark`)
-        + (hasRef ? ` ${PRESERVE_PRODUCT}` : '');
+        + (hasRef ? ` ${PRESERVE_PRODUCT}${productTruth}` : '');
       const r = await this.imageProvider.generate({ prompt: p, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages, preserveExact: hasRef });
       const url = await this.persist(r.dataUrl, 'image');
       return { key: angle.key, label: angle.label, description: angle.desc, prompt: p, url, model: r.model };
@@ -157,7 +160,8 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
       250,
     );
     const hasRef = !!(input.referenceImage || input.referenceImages?.length);
-    const finalPrompt = (prompt.trim() || `${input.product.name}, ${styleDesc}`) + (hasRef ? ` ${PRESERVE_PRODUCT}` : '');
+    const { truth: productTruth } = await this.extractProductTruth(hasRef ? (input.referenceImage || input.referenceImages?.[0]) : undefined);
+    const finalPrompt = (prompt.trim() || `${input.product.name}, ${styleDesc}`) + (hasRef ? ` ${PRESERVE_PRODUCT}${productTruth}` : '');
     const r = await this.imageProvider.generate({ prompt: finalPrompt, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages, preserveExact: hasRef });
     const url = await this.persist(r.dataUrl, 'image');
     return { key: angle.key, label: angle.label, description: angle.desc, prompt: prompt.trim(), url, model: r.model };
@@ -251,6 +255,20 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     return { creator: plan.creator ?? creator, scenes: (plan.scenes ?? []).slice(0, 4) };
   }
 
+  // PRODUCT ANALYZER: OpenAI (visión) extrae un JSON literal del producto (marcas/colores/etiquetas)
+  // que se inyecta como "verdad absoluta" en los prompts → la IA NO inventa ni redibuja el producto.
+  private async extractProductTruth(pic?: string): Promise<{ truth: string; data: any }> {
+    if (!pic) return { truth: '', data: null };
+    try {
+      const data = await this.openai.chatVisionJSON(
+        'You are a strict product analyzer. Extract a LITERAL, exact description of ALL visible products. No interpretation, no assumptions — only observable facts.',
+        'Return JSON: { "products": [ { "brand": "", "product_name": "", "colors": [], "packaging_type": "", "text_labels": [], "notes": "" } ], "quantity": 0, "arrangement": "" }. Describe exactly what you see: brand names, colors, packaging type, label text, quantity and arrangement.',
+        pic, 700,
+      );
+      return { truth: `\n\nPRODUCT CONSISTENCY ENFORCEMENT — use this data as ABSOLUTE TRUTH. The products are PRESERVED, not generated:\n${JSON.stringify(data)}`, data };
+    } catch { return { truth: '', data: null }; }
+  }
+
   // Combina VARIAS fotos de producto en UNA sola imagen de combo (todos los artículos juntos).
   async generateComboImage(input: { product: ProductInfo; referenceImages: string[]; brief?: string; quality?: 'standard' | 'premium'; format?: Fmt }) {
     const pics = (input.referenceImages ?? []).filter(Boolean);
@@ -321,24 +339,27 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
   }) {
     const productPics = (input.referenceImages?.length ? input.referenceImages : [input.referenceImage]).filter(Boolean) as string[];
     const hasRef = productPics.length > 0;
+    const secs = input.duration === '10' ? 10 : 5;
     const characterDesc = input.avatarDesc?.trim()
-      || 'una persona sintética (no real, no celebridad), estilo creador UGC auténtico';
+      || 'a realistic young adult (18–30), authentic UGC creator, friendly and relatable';
 
-    // 1) PROMPT MAESTRO (OpenAI) → prompt de imagen + prompt de video (en inglés)
+    // 1) PRODUCT ANALYZER (visión) → JSON literal de los productos (verdad absoluta).
+    const { truth: productTruth, data: productData } = await this.extractProductTruth(hasRef ? productPics[0] : undefined);
+
+    // 2) PROMPT MASTER (OpenAI) → prompt de imagen + prompt de video (premium, en inglés)
     const { fragments, rest } = expandCommands(input.brief);
     const cmdLine = [...fragments, rest].filter(Boolean).join('; ');
     const plan = await this.openai.chatJSON<{ imagePrompt: string; videoPrompt: string; script: string }>(
-      'Sos director de UGC. Diseñás UN solo video vertical donde una persona muestra el producto (o combo completo) a cámara, estética selfie orgánica de celular.',
-      `Producto: ${JSON.stringify(input.product)}. Personaje: ${characterDesc}.${cmdLine ? ' Directivas: ' + cmdLine + '.' : ''}
-Devolvé JSON con:
-- "imagePrompt": EN INGLÉS, la escena/foto: la persona sosteniendo y mostrando ${hasRef ? 'EL/LOS producto(s) EXACTO(s) de la(s) imagen(es) de referencia' : `"${input.product.name}"`}, UGC selfie vertical, luz natural, sin watermark, sin texto.
-- "videoPrompt": EN INGLÉS, el movimiento natural (la persona muestra el producto a cámara, gestos naturales, leve movimiento handheld, ~5-10s).
-- "script": la frase corta en español que dice a cámara.
-JSON: { "imagePrompt": "...", "videoPrompt": "...", "script": "..." }`,
-      500,
+      'You are the PROMPT MASTER of a high-end commercial UGC pipeline. Products are LOCKED visual assets: NEVER redesign, recolor, relabel or reinvent them. Creativity applies ONLY to the human and the environment. Prioritize realism over style, avoid the "AI look".',
+      `Character: ${characterDesc}. Product: ${JSON.stringify(input.product)}.${productTruth}${cmdLine ? '\nUser directives: ' + cmdLine + '.' : ''}
+Return JSON with three keys:
+- "imagePrompt" (EN INGLÉS): photorealistic UGC image — the person holding the EXACT snack combo from the reference toward the camera. Medium shot (waist up), centered, smiling naturally, products sharp, readable and front-facing. DSLR / commercial camera look, natural golden-hour or soft daylight, shallow depth of field, outdoor casual setting (park/backyard/social), warm inviting atmosphere, background slightly blurred. Hands gripping the bags naturally (no distortions), correct proportions, original packaging reflections and textures preserved. No AI look, no watermark, no text corruption.
+- "videoPrompt" (EN INGLÉS): premium cinematic UGC video of ~${secs}s — hook close-up of the products with slight motion; hero medium shot presenting the combo to camera; natural interaction (slight product rotation, subtle hand motion, eye contact); lifestyle moment (laughs/gestures as if sharing with friends). Handheld subtle motion (not shaky), shallow depth of field, focus transitions face→products, golden-hour warm tones, cinematic realism. CONTINUITY: the products stay identical in ALL frames — no morphing, no label distortion, no flicker, no extra/duplicated items.
+- "script": frase corta en español que la persona dice a cámara.`,
+      900,
     );
 
-    // 2) GENERACIÓN DE PERSONAJE (OpenAI imagen) con el producto EXACTO
+    // 3) GENERACIÓN DE PERSONAJE (OpenAI imagen) con el producto EXACTO
     const refs = [input.avatarImage, ...productPics].filter(Boolean) as string[];
     const img = await this.imageProvider.generate({
       prompt: `${plan.imagePrompt}${hasRef ? ' ' + PRESERVE_PRODUCT : ''}`,
@@ -348,18 +369,17 @@ JSON: { "imagePrompt": "...", "videoPrompt": "...", "script": "..." }`,
     });
     const imageUrl = await this.persist(img.dataUrl, 'image');
 
-    // 3) GENERACIÓN DE VIDEO (Seedance) con el prompt de video
+    // 4) GENERACIÓN DE VIDEO (Seedance) con el prompt de video
     if (!this.videoProvider.enabled) {
-      return { imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script, imageUrl, videoUrl: null, videoPending: true };
+      return { productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script, imageUrl, videoUrl: null, videoPending: true };
     }
-    const dur = input.duration === '10' ? 10 : 5;
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
     const vid = await this.videoProvider.generate({
       image: img.dataUrl, prompt: plan.videoPrompt || 'natural UGC movement, person showing the product to camera',
-      duration: dur, resolution: q.resolution, audio: q.audio,
+      duration: secs, resolution: q.resolution, audio: q.audio,
     });
     return {
-      imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script,
+      productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script,
       imageUrl, videoUrl: await this.persist(vid.url, 'video'), model: vid.model, seconds: vid.seconds,
     };
   }
