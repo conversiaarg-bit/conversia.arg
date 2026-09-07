@@ -2,18 +2,21 @@
 // Todo configurable por env. 1 crédito = valor comercial interno (NO el costo real).
 const n = (v: string | undefined, def: number) => (v != null && v !== '' ? Number(v) : def);
 
+// Precio de venta de 1 crédito (packs: ~$0.12–0.18; planes: ~$0.13–0.19). Media ≈ $0.15.
 export const CREDIT_VALUE_USD = n(process.env.CREDIT_VALUE_USD, 0.15);
 
-// Costo en CRÉDITOS por operación (lo que se le cobra al usuario)
+// Costo en CRÉDITOS por operación — PROPORCIONAL al costo real de IA.
+// Base: 1 crédito ≈ $0.05 de costo real (créditos = ceil(costoReal / 0.05)).
+// Vendido a $0.15/crédito → margen ~consistente (~3x) en TODAS las operaciones.
 export const CREDIT_COSTS = {
-  image_standard: n(process.env.IMAGE_STANDARD_CREDITS, 1),
-  image_premium:  n(process.env.IMAGE_PREMIUM_CREDITS, 3),
-  video_5:        n(process.env.VIDEO_5_SECONDS_CREDITS, 5),
-  video_10:       n(process.env.VIDEO_10_SECONDS_CREDITS, 10),
-  ugc_video_10:   n(process.env.UGC_VIDEO_10_CREDITS, 10),
-  product_video_10: n(process.env.PRODUCT_VIDEO_10_CREDITS, 10),
-  offer_video_10: n(process.env.OFFER_VIDEO_10_CREDITS, 10),
-  copy:           n(process.env.COPY_CREDITS, 0),
+  image_standard: n(process.env.IMAGE_STANDARD_CREDITS, 1),   // $0.018 → 1
+  image_premium:  n(process.env.IMAGE_PREMIUM_CREDITS, 2),    // $0.063 → 2
+  video_5:        n(process.env.VIDEO_5_SECONDS_CREDITS, 7),  // $0.31 → 7
+  video_10:       n(process.env.VIDEO_10_SECONDS_CREDITS, 13),// $0.62 → 13
+  ugc_video_10:   n(process.env.UGC_VIDEO_10_CREDITS, 13),    // escena UGC (video)
+  product_video_10: n(process.env.PRODUCT_VIDEO_10_CREDITS, 13),
+  offer_video_10: n(process.env.OFFER_VIDEO_10_CREDITS, 13),
+  copy:           n(process.env.COPY_CREDITS, 0),             // $0.0008 → gratis
 } as const;
 
 export type CreditOperation = keyof typeof CREDIT_COSTS;
