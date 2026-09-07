@@ -7,6 +7,11 @@ import { IMAGE_PROVIDER, VIDEO_PROVIDER, ImageProvider, VideoProvider } from './
 import { CREATOR_PRESETS, SCENE_BY_CATEGORY, creatorByKey } from './creators.config';
 import { expandCommands } from './commands.config';
 import { VIDEO_QUALITY, videoQuality } from '../config/credits.config';
+
+// Directiva GLOBAL: siempre que hay una imagen de referencia, se usa el artículo ORIGINAL
+// sin modificarlo. La publicidad es de ESE producto, no de uno parecido.
+export const PRESERVE_PRODUCT =
+  'CRITICAL: Reproduce the EXACT product(s) from the reference image(s) — do NOT redraw, restyle, recolor, relabel, resize or alter the packaging, brand, logo, text, graphics, shapes or proportions in ANY way. Each product must look IDENTICAL to its reference photo (same real product). Only adapt the background, scene, lighting and composition around them. We are advertising THIS exact product, not a similar one.';
 import { ffmpeg } from '../common/ffmpeg';
 import axios from 'axios';
 import * as os from 'os';
@@ -129,9 +134,11 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
     // Las 3 variantes se generan EN PARALELO (antes secuencial ~60s → ahora ~20s;
     // clave para no pasarse del timeout del proxy de Vercel).
     const out = await Promise.all(VARIANT_ANGLES.slice(0, limit).map(async angle => {
-      const p = prompts.find(x => x.key === angle.key)?.prompt
-        ?? `${input.product.name}, ${styleDesc}, ${angle.desc}, professional Meta Ads creative, photorealistic, no watermark`;
-      const r = await this.imageProvider.generate({ prompt: p, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages });
+      const hasRef = !!(input.referenceImage || input.referenceImages?.length);
+      const p = (prompts.find(x => x.key === angle.key)?.prompt
+        ?? `${input.product.name}, ${styleDesc}, ${angle.desc}, professional Meta Ads creative, photorealistic, no watermark`)
+        + (hasRef ? ` ${PRESERVE_PRODUCT}` : '');
+      const r = await this.imageProvider.generate({ prompt: p, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages, preserveExact: hasRef });
       const url = await this.persist(r.dataUrl, 'image');
       return { key: angle.key, label: angle.label, description: angle.desc, prompt: p, url, model: r.model };
     }));
@@ -149,7 +156,9 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
       `Producto: ${JSON.stringify(input.product)}. Estilo: ${styleDesc}. Ángulo: ${angle.label} (${angle.desc}).${briefLine} Un prompt visual en inglés, con composición/iluminación/fondo/espacio para texto, sin watermark.`,
       250,
     );
-    const r = await this.imageProvider.generate({ prompt: prompt.trim() || `${input.product.name}, ${styleDesc}`, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages });
+    const hasRef = !!(input.referenceImage || input.referenceImages?.length);
+    const finalPrompt = (prompt.trim() || `${input.product.name}, ${styleDesc}`) + (hasRef ? ` ${PRESERVE_PRODUCT}` : '');
+    const r = await this.imageProvider.generate({ prompt: finalPrompt, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages, preserveExact: hasRef });
     const url = await this.persist(r.dataUrl, 'image');
     return { key: angle.key, label: angle.label, description: angle.desc, prompt: prompt.trim(), url, model: r.model };
   }
@@ -196,8 +205,9 @@ Devolvé JSON: { "creatorKey": "<una key>", "scene": "escenario en inglés acord
       `Vertical smartphone-style UGC photo. A completely fictional AI-generated person (${creator.appearance}, age ${creator.ageRange}), NOT a real or identifiable person, NOT a celebrity.`,
       `In a ${scene}. Naturally holding and using the product "${input.product.name}".`,
       `Authentic organic content look: natural lighting, casual composition, slight imperfections, like a real Reel/TikTok. Face looking toward camera. No watermark, no text overlay.`,
+      input.referenceImage ? PRESERVE_PRODUCT : '',
     ].join(' ');
-    const img = await this.imageProvider.generate({ prompt: imgPrompt, format: input.format ?? '9:16', quality: 'standard', referenceImage: input.referenceImage });
+    const img = await this.imageProvider.generate({ prompt: imgPrompt, format: input.format ?? '9:16', quality: 'standard', referenceImage: input.referenceImage, preserveExact: !!input.referenceImage });
     const imageUrl = await this.persist(img.dataUrl, 'image');
 
     // Sin proveedor de video configurado (ej. Seedance sin implementar todavia): se
@@ -248,13 +258,14 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     const { fragments, rest } = expandCommands(input.brief);
     const cmdLine = (fragments.length || rest) ? ` Commercial directives: ${[...fragments, rest].filter(Boolean).join('; ')}.` : '';
     const prompt = [
-      `Professional commercial COMBO product photo: arrange TOGETHER all ${pics.length} products from the reference images as an attractive bundle/combo on a clean studio background.`,
-      `Keep EACH product's packaging, brand, logo, colors, text and shape IDENTICAL to its reference — all products fully visible, sharp focus, well-lit, correct proportions, nicely composed together.`,
-      `No watermark, no extra text overlay.${cmdLine}`,
+      `Professional commercial COMBO product photo: arrange TOGETHER all ${pics.length} products from the reference images as an attractive promotional bundle on a clean, appealing commercial background (studio or lifestyle table), well composed and eye-catching like a real ad.`,
+      PRESERVE_PRODUCT,
+      `All products fully visible, sharp focus, well-lit, correct proportions.${cmdLine}`,
     ].join(' ');
     const img = await this.imageProvider.generate({
       prompt, format: input.format ?? '9:16', quality: input.quality ?? 'standard',
       referenceImage: pics[0], referenceImages: pics.length > 1 ? pics : undefined,
+      preserveExact: true, // el combo SIEMPRE usa el producto exacto
     });
     const imageUrl = await this.persist(img.dataUrl, 'image');
     return { imageUrl, model: img.model };
@@ -281,9 +292,10 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     // Referencias: avatar (persona) primero + todas las fotos de producto (combo). gpt-image-1 las compone.
     const refs = [input.avatarImage, ...productPics].filter(Boolean) as string[];
     const img = await this.imageProvider.generate({
-      prompt: `${input.scene.imagePrompt}. Vertical smartphone UGC photo. ${personLine} ${productLine}${cmdLine} Natural lighting, no watermark, no text overlay.`,
+      prompt: `${input.scene.imagePrompt}. Vertical smartphone UGC photo. ${personLine} ${productLine}${hasRef ? ' ' + PRESERVE_PRODUCT : ''}${cmdLine} Natural lighting, no watermark, no text overlay.`,
       format: input.format ?? '9:16', quality: input.quality ?? 'standard',
       referenceImage: refs[0], referenceImages: refs.length > 1 ? refs : undefined,
+      preserveExact: hasRef, // si hay producto de referencia, usarlo EXACTO (no redibujar)
     });
     const imageUrl = await this.persist(img.dataUrl, 'image');
 

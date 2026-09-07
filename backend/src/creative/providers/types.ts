@@ -7,6 +7,7 @@ export interface ImageGenInput {
   quality?: 'standard' | 'premium';
   referenceImage?: string;      // base64/dataURL de la foto real del producto (preservación)
   referenceImages?: string[];   // varias fotos del producto (gpt-image-1 las compone)
+  preserveExact?: boolean;      // input_fidelity 'high' → reproduce el producto EXACTO (no lo redibuja)
 }
 export interface ImageResult { dataUrl: string; model: string }
 export interface ImageProvider {

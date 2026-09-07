@@ -49,9 +49,9 @@ export class OpenAIImageProvider implements ImageProvider {
         form.append('prompt', input.prompt);
         form.append('size', size);
         form.append('quality', quality);
-        // Fidelidad de la referencia: 'low' por defecto (barato). Solo 'high' en HD/premium
-        // (preserva el producto EXACTO pero cuesta ~3x). Así el costo queda controlado.
-        form.append('input_fidelity', input.quality === 'premium' ? 'high' : 'low');
+        // Fidelidad de la referencia: 'high' cuando hay que reproducir el producto EXACTO
+        // (preserveExact o HD/premium). Preserva packaging/logo/texto sin redibujarlo (~3x costo).
+        form.append('input_fidelity', (input.preserveExact || input.quality === 'premium') ? 'high' : 'low');
         form.append('n', '1');
         const res = await axios.post('https://api.openai.com/v1/images/edits', form, { headers, timeout: 120_000 });
         const out = res.data?.data?.[0]?.b64_json;
