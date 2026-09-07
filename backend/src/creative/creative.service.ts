@@ -12,6 +12,11 @@ import { VIDEO_QUALITY, videoQuality } from '../config/credits.config';
 // sin modificarlo. La publicidad es de ESE producto, no de uno parecido.
 export const PRESERVE_PRODUCT =
   'CRITICAL: Reproduce the EXACT product(s) from the reference image(s) — do NOT redraw, restyle, recolor, relabel, resize or alter the packaging, brand, logo, text, graphics, shapes or proportions in ANY way. Each product must look IDENTICAL to its reference photo (same real product). Only adapt the background, scene, lighting and composition around them. We are advertising THIS exact product, not a similar one.';
+
+// Directiva CINEMATOGRÁFICA para el video (Seedance): trata la imagen como footage real,
+// producto bloqueado, cámara DSLR, movimiento sutil físicamente correcto, sin artefactos.
+export const PREMIUM_VIDEO_DIRECTIVE =
+  'Treat the input image as REAL FOOTAGE — the products are LOCKED: do NOT modify packaging, logos, colors, text or shapes, do NOT add, remove or duplicate products, do NOT morph or distort labels across frames. Cinematic commercial look: simulate a DSLR/mirrorless camera, 35–50mm lens, f/1.8–f/2.8 shallow depth of field, smooth subtle handheld micro-movements (professional, not shaky, no aggressive motion), natural golden-hour light with soft realistic reflections on the packaging, no overexposure, no artificial glow. Hyper-realistic and commercial-grade, NOT AI-looking, no plastic skin or CGI. Motion physically correct with real-world inertia; lighting consistent across all frames; product label pixels preserved. NEGATIVE: no fake brands, no duplicated products, no text errors, no warping, no flicker, no morphing, no surreal effects, no exaggerated motion. Priority order: (1) product fidelity, (2) realism, (3) smooth motion, (4) cinematic quality.';
 import { ffmpeg } from '../common/ffmpeg';
 import axios from 'axios';
 import * as os from 'os';
@@ -178,7 +183,7 @@ Escribí en INGLÉS una instrucción de animación ESPECÍFICA para este tipo de
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
     const r = await this.videoProvider.generate({
       image: input.imageBase64,
-      prompt: animation.trim() || 'smooth cinematic camera movement, subtle zoom',
+      prompt: `${animation.trim() || 'smooth cinematic camera movement, subtle zoom'} ${PREMIUM_VIDEO_DIRECTIVE}`,
       duration: Number(input.duration),
       resolution: q.resolution, audio: q.audio,
     });
@@ -228,7 +233,7 @@ Devolvé JSON: { "creatorKey": "<una key>", "scene": "escenario en inglés acord
     // Video UGC: movimiento natural de persona interactuando con el producto
     const animation = `Natural UGC video: the person looks at the camera, holds and shows the product, subtle natural body and hand movements, slight handheld camera motion, organic smartphone-recorded feel. Not a TV commercial.`;
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
-    const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: animation, duration: Number(duration), resolution: q.resolution, audio: q.audio });
+    const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: `${animation} ${PREMIUM_VIDEO_DIRECTIVE}`, duration: Number(duration), resolution: q.resolution, audio: q.audio });
 
     return {
       imageUrl, videoUrl: await this.persist(vid.url, 'video'), model: vid.model, seconds: vid.seconds,
@@ -325,7 +330,7 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
 
     const dur = (input.scene.seconds ?? 8) >= 9 ? 10 : 5;
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
-    const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: input.scene.videoPrompt || 'natural UGC movement, person interacting with the product', duration: dur, resolution: q.resolution, audio: q.audio });
+    const vid = await this.videoProvider.generate({ image: img.dataUrl, prompt: `${input.scene.videoPrompt || 'natural UGC movement, person interacting with the product'} ${PREMIUM_VIDEO_DIRECTIVE}`, duration: dur, resolution: q.resolution, audio: q.audio });
     return { imageUrl, videoUrl: await this.persist(vid.url, 'video'), model: vid.model, seconds: vid.seconds, sceneKey: input.scene.key };
   }
 
@@ -354,7 +359,7 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
       `Character: ${characterDesc}. Product: ${JSON.stringify(input.product)}.${productTruth}${cmdLine ? '\nUser directives: ' + cmdLine + '.' : ''}
 Return JSON with three keys:
 - "imagePrompt" (EN INGLÉS): photorealistic UGC image — the person holding the EXACT snack combo from the reference toward the camera. Medium shot (waist up), centered, smiling naturally, products sharp, readable and front-facing. DSLR / commercial camera look, natural golden-hour or soft daylight, shallow depth of field, outdoor casual setting (park/backyard/social), warm inviting atmosphere, background slightly blurred. Hands gripping the bags naturally (no distortions), correct proportions, original packaging reflections and textures preserved. No AI look, no watermark, no text corruption.
-- "videoPrompt" (EN INGLÉS): premium cinematic UGC video of ~${secs}s — hook close-up of the products with slight motion; hero medium shot presenting the combo to camera; natural interaction (slight product rotation, subtle hand motion, eye contact); lifestyle moment (laughs/gestures as if sharing with friends). Handheld subtle motion (not shaky), shallow depth of field, focus transitions face→products, golden-hour warm tones, cinematic realism. CONTINUITY: the products stay identical in ALL frames — no morphing, no label distortion, no flicker, no extra/duplicated items.
+- "videoPrompt" (EN INGLÉS): premium ultra-realistic commercial video of ~${secs}s that looks shot with a real camera, using the image as REAL FOOTAGE. Structure: HOOK (0–2s) extreme close-up of the products with subtle natural camera movement and light reflections on the packaging, micro depth-of-field shift; HERO (2–5s) smooth zoom-out / slight reframing showing the full combo, perfect sharpness on products; MICRO-MOTION (5–8s) very subtle parallax (foreground vs background), slight professional handheld motion, realistic natural light; END FRAME (8–10s) stable clean composition ready for a CTA overlay. DSLR/mirrorless 35–50mm, f/1.8–2.8 shallow depth of field, golden-hour soft light. CONTINUITY: products identical in ALL frames — no morphing, no label distortion, no flicker, no extra/duplicated items.
 - "script": frase corta en español que la persona dice a cámara.`,
       900,
     );
@@ -375,7 +380,8 @@ Return JSON with three keys:
     }
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
     const vid = await this.videoProvider.generate({
-      image: img.dataUrl, prompt: plan.videoPrompt || 'natural UGC movement, person showing the product to camera',
+      image: img.dataUrl,
+      prompt: `${plan.videoPrompt || 'natural UGC movement, person showing the product to camera'} ${PREMIUM_VIDEO_DIRECTIVE}`,
       duration: secs, resolution: q.resolution, audio: q.audio,
     });
     return {
