@@ -46,6 +46,9 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   const [comboLoading, setComboLoading] = useState(false);
   const [pipe, setPipe] = useState<Pipe>({}); // pipeline único: prompts + imagen + 1 video
   const [videoDur, setVideoDur] = useState<'5' | '10'>('5');
+  const [pkg, setPkg] = useState<any>(null);   // paquete de ads (hooks/copy/variaciones)
+  const [pkgLoading, setPkgLoading] = useState(false);
+  const [showPkg, setShowPkg] = useState(false);
   const [format] = useState<Fmt>('9:16');
   const [plan, setPlan] = useState<{ creator: string; scenes: UgcScene[] } | null>(null);
   const [runs, setRuns] = useState<Record<string, SceneRun>>({});
@@ -233,6 +236,19 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     } finally { setComboLoading(false); }
   };
 
+  // Paquete de ads: hooks + copy + guion + 3 variaciones (no genera video, solo texto — casi gratis)
+  const genPkg = async () => {
+    if (!name && productImages.length === 0) { pushMsg('copilot', 'Primero poné el nombre del producto o subí una foto.'); return; }
+    setPkgLoading(true); setShowPkg(true);
+    try {
+      const r = await creativeApi.adPackage({ product: { name: name || 'Producto' }, referenceImage: comboImage || imageBase64, referenceImages: (!comboImage && productImages.length > 1) ? productImages : undefined, seconds: Number(videoDur) });
+      setPkg(r);
+    } catch {
+      pushMsg('copilot', 'No pude armar el paquete de ads. Probá de nuevo.');
+      setShowPkg(false);
+    } finally { setPkgLoading(false); }
+  };
+
   // ── El Copiloto interpreta y construye/edita los nodos por chat ──────────────
   const recommend = () => {
     if (!plan) return 'Contame el producto y un beneficio clave y armo el flujo Gancho → Mensaje → Se construye → CTA. Tip: subí una foto del producto (📷 arriba) para que la persona lo sostenga en cada escena.';
@@ -331,6 +347,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Producto…" style={{ width: 160, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 13, outline: 'none' }} />
         <input value={cmd} onChange={e => setCmd(e.target.value)} title="Estilo o comandos /x que se aplican a TODAS las escenas (ej: /ad /appetite /studio)" placeholder="Estilo / comandos: /ad /appetite /studio…" style={{ width: 230, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 13, outline: 'none' }} />
         <Btn onClick={() => startCampaign()} disabled={planning || (!name && !imageBase64)}>{planning ? 'Planeando…' : plan ? 'Replanificar' : '🤖 Planificar'}</Btn>
+        <button onClick={genPkg} disabled={pkgLoading} title="Genera hooks, guion, copy y 3 variaciones (texto, casi gratis)" style={{ padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: pkgLoading ? 'wait' : 'pointer', border: 'none', background: C.grad, color: '#fff' }}>{pkgLoading ? 'Armando…' : '✨ Paquete de ads'}</button>
         {doneCount > 0 && <button onClick={saveProject} style={{ padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text }}>{saved ? '✓ Guardado' : '💾 Guardar'}</button>}
       </div>
 
@@ -457,6 +474,47 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
           </div>
         );
       })()}
+
+      {/* Paquete de ads (hooks + copy + guion + 3 variaciones) */}
+      {showPkg && (
+        <div onClick={() => setShowPkg(false)} style={{ position: 'fixed', inset: 0, background: '#000a', zIndex: 100, display: 'grid', placeItems: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 'min(720px,95vw)', maxHeight: '85vh', overflowY: 'auto', background: '#0f0f1a', border: `1px solid ${C.borderBright}`, borderRadius: 16, padding: 22 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 18 }}>✨ Paquete de ads</div>
+              <button onClick={() => setShowPkg(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: C.textMuted, fontSize: 18, cursor: 'pointer' }}>✕</button>
+            </div>
+            {pkgLoading || !pkg ? (
+              <div style={{ padding: '48px 0', textAlign: 'center', color: C.textMuted }}>Armando el paquete… (hooks, guion, copy y 3 variaciones)</div>
+            ) : (() => {
+              const copyTxt = (t: string) => { try { navigator.clipboard.writeText(t); } catch { /* ignore */ } };
+              const Sec = ({ title, children }: any) => <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12, fontWeight: 700, color: C.accent, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>{title}</div>{children}</div>;
+              const Line = ({ t }: { t: string }) => <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 6 }}><div style={{ flex: 1, fontSize: 13, color: C.text, lineHeight: 1.5, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px' }}>{t}</div><button onClick={() => copyTxt(t)} title="Copiar" style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, cursor: 'pointer', fontSize: 12, padding: '8px 10px' }}>📋</button></div>;
+              return (
+                <>
+                  {pkg.hooks?.length > 0 && <Sec title="Hooks">{pkg.hooks.map((h: string, i: number) => <Line key={i} t={h} />)}</Sec>}
+                  {pkg.voice_script && <Sec title="Guion de voz">{<Line t={pkg.voice_script} />}</Sec>}
+                  {pkg.copy && <Sec title="Copy">
+                    {pkg.copy.headline && <Line t={pkg.copy.headline} />}
+                    {pkg.copy.text && <Line t={pkg.copy.text} />}
+                    {pkg.copy.cta && <Line t={pkg.copy.cta} />}
+                  </Sec>}
+                  {pkg.variations && <Sec title="Variaciones (guion)">
+                    {(['ugc', 'demo', 'hard_sell'] as const).map(k => pkg.variations[k]?.voice_script && (
+                      <div key={k} style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 3, textTransform: 'uppercase' }}>{k.replace('_', ' ')}</div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <div style={{ flex: 1, fontSize: 12.5, color: C.text, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px' }}>{pkg.variations[k].voice_script}</div>
+                          <button onClick={() => { setCmd(pkg.variations[k].voice_script); setShowPkg(false); pushMsg('copilot', `Cargué el guion de la variación "${k}". Ejecutá para generar el video.`); }} style={{ background: C.accent, border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, padding: '8px 10px', whiteSpace: 'nowrap' }}>Usar</button>
+                        </div>
+                      </div>
+                    ))}
+                  </Sec>}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
