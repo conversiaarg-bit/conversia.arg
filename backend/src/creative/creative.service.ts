@@ -17,6 +17,10 @@ export const PRESERVE_PRODUCT =
 // producto bloqueado, cámara DSLR, movimiento sutil físicamente correcto, sin artefactos.
 export const PREMIUM_VIDEO_DIRECTIVE =
   'Treat the input image as REAL FOOTAGE — the products are LOCKED: do NOT modify packaging, logos, colors, text or shapes, do NOT add, remove or duplicate products, do NOT morph or distort labels across frames. Cinematic commercial look: simulate a DSLR/mirrorless camera, 35–50mm lens, f/1.8–f/2.8 shallow depth of field, smooth subtle handheld micro-movements (professional, not shaky, no aggressive motion), natural golden-hour light with soft realistic reflections on the packaging, no overexposure, no artificial glow. Hyper-realistic and commercial-grade, NOT AI-looking, no plastic skin or CGI. Motion physically correct with real-world inertia; lighting consistent across all frames; product label pixels preserved. NEGATIVE: no fake brands, no duplicated products, no text errors, no warping, no flicker, no morphing, no surreal effects, no exaggerated motion. Priority order: (1) product fidelity, (2) realism, (3) smooth motion, (4) cinematic quality.';
+
+// Directiva para VIDEO estilo UGC selfie (iPhone, crudo) — NO cinematográfico.
+export const UGC_VIDEO_DIRECTIVE =
+  'Authentic raw iPhone selfie footage — handheld, daytime white balance, sharp readable background (NO bokeh, NO cinematic depth of field, NO studio look). The product is LOCKED: keep packaging, logos, colors and text identical in every frame, no morphing, no label distortion, no flicker, no extra/duplicated products. Realistic skin and grain, natural gestures, real-world motion; NOT AI-looking, no plastic skin, no beauty filter, no commercial/DSLR look.';
 import { ffmpeg } from '../common/ffmpeg';
 import axios from 'axios';
 import * as os from 'os';
@@ -355,12 +359,16 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     const { fragments, rest } = expandCommands(input.brief);
     const cmdLine = [...fragments, rest].filter(Boolean).join('; ');
     const plan = await this.openai.chatJSON<{ imagePrompt: string; videoPrompt: string; script: string }>(
-      'You are the PROMPT MASTER of a high-end commercial UGC pipeline. Products are LOCKED visual assets: NEVER redesign, recolor, relabel or reinvent them. Creativity applies ONLY to the human and the environment. Prioritize realism over style, avoid the "AI look".',
-      `Character: ${characterDesc}. Product: ${JSON.stringify(input.product)}.${productTruth}${cmdLine ? '\nUser directives: ' + cmdLine + '.' : ''}
-Return JSON with three keys:
-- "imagePrompt" (EN INGLÉS): photorealistic UGC image — the person presenting the COMPLETE combo toward the camera: ALL the snack products from the reference must be visible together (the person holds several bags in both hands and/or the rest of the products are arranged clearly around/in front of them), every product bag fully visible, sharp, readable and front-facing — NOT just one product. Reproduce EACH product exactly as in the reference. Medium shot (waist up), centered, smiling naturally. DSLR / commercial camera look, natural golden-hour or soft daylight, shallow depth of field, outdoor casual setting (park/backyard/social), warm inviting atmosphere, background slightly blurred. Hands gripping the bags naturally (no distortions), correct proportions, original packaging reflections and textures preserved. No AI look, no watermark, no text corruption.
-- "videoPrompt" (EN INGLÉS): premium ultra-realistic commercial video of ~${secs}s that looks shot with a real camera, using the image as REAL FOOTAGE. Structure: HOOK (0–2s) extreme close-up of the products with subtle natural camera movement and light reflections on the packaging, micro depth-of-field shift; HERO (2–5s) smooth zoom-out / slight reframing showing the full combo, perfect sharpness on products; MICRO-MOTION (5–8s) very subtle parallax (foreground vs background), slight professional handheld motion, realistic natural light; END FRAME (8–10s) stable clean composition ready for a CTA overlay. DSLR/mirrorless 35–50mm, f/1.8–2.8 shallow depth of field, golden-hour soft light. CONTINUITY: products identical in ALL frames — no morphing, no label distortion, no flicker, no extra/duplicated items.
-- "script": frase corta en español que la persona dice a cámara.`,
+      'You are a prompt engineer for iPhone-SELFIE UGC ads (Creatify style). The look is RAW, handheld, authentic phone footage — NOT commercial, NOT DSLR, NOT cinematic, NO bokeh. The product is a LOCKED asset: keep its packaging, colors, logos, materials and text EXACT, no redesign or relabeling. You invent only the person, their outfit and their everyday room. Output ONLY valid JSON.',
+      `Product: ${JSON.stringify(input.product)}. Character base: ${characterDesc}.${productTruth}${cmdLine ? '\nUser directives: ' + cmdLine + '.' : ''}
+Fill this TEMPLATE for THIS product and return JSON with keys "imagePrompt", "videoPrompt", "script":
+
+"imagePrompt" (ENGLISH, single flowing line using → arrows, MUST follow this exact structure):
+handheld iPhone front-camera selfie, 9:16, arm-stretched selfie perspective, slightly off-center framing with a tiny natural shake, real casual young energy → the product must be kept EXACT: same packaging shapes, colors, logos, materials and text, no redesign or relabeling → one <specific person matching the character base, age, vibe>, bright friendly expression, mid-sentence mouth slightly open, direct eye contact with the lens → a unique specific outfit <describe it> → everyday room behind them fully visible and readable (posters, backpack, shelves, normal clutter), no blur, no bokeh → the person is actively taking the selfie while holding ONE product bag in ONE hand with a casual tilted grip, the other hand holding the phone, weight on one hip, torso slightly rotated, small natural talk-gesture from the wrist → soft natural daylight from a window, daytime white balance, raw iPhone texture, realistic skin and grain, no studio look, no heavy contrast, no cinematic depth of field, authentic handheld snapshot feel; NEGATIVE: stiff pose, mannequin, empty hands, two-hand product presentation, catalog grip, posed smile, studio lighting, strong sun, yellow glow, bokeh, blurry background, plastic skin, beauty filter, commercial ad, split screen, redesigned product, extra fingers, third-person photo, DSLR portrait, photographer standing in front of subject.
+
+"videoPrompt" (ENGLISH): Selfie Talking Head (${secs}s): 9:16 iPhone front-camera selfie talking-head of this SAME person holding the product speaking "<the script line below, in the ad's language>", engaging eye contact with the lens, natural gestures, daytime white balance, sharp background, handheld. The generated video includes 2 B-rolls: a simple product-only cutaway in daytime white balance; then the same person using/enjoying the product naturally, handheld, not a showroom.
+
+"script": una frase corta, natural y vendedora en español rioplatense que la persona dice a cámara sobre el producto (con un CTA al final).`,
       900,
     );
 
@@ -381,7 +389,7 @@ Return JSON with three keys:
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
     const vid = await this.videoProvider.generate({
       image: img.dataUrl,
-      prompt: `${plan.videoPrompt || 'natural UGC movement, person showing the product to camera'} ${PREMIUM_VIDEO_DIRECTIVE}`,
+      prompt: `${plan.videoPrompt || 'natural UGC selfie, person talking to camera holding the product'} ${UGC_VIDEO_DIRECTIVE}`,
       duration: secs, resolution: q.resolution, audio: q.audio,
     });
     return {
