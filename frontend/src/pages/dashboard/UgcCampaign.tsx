@@ -343,9 +343,9 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
         </div>
         {setVq && vqOptions.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '6px 10px' }}>
-            <span style={{ fontSize: 12, color: C.textMuted }}>Video:</span>
-            <select value={vq} onChange={e => setVq(e.target.value)} title="Calidad del video (afecta el costo)" style={{ background: 'transparent', border: 'none', color: C.text, fontSize: 12, fontWeight: 600, outline: 'none', cursor: 'pointer' }}>
-              {vqOptions.map((o: any) => <option key={o.key} value={o.key} style={{ color: '#000' }}>{o.label} ({o.credits10} créd./10s)</option>)}
+            <span style={{ fontSize: 12, color: C.textMuted }}>Calidad del video:</span>
+            <select value={vq} onChange={e => setVq(e.target.value)} title="Calidad del video (afecta cuántos créditos consume)" style={{ background: 'transparent', border: 'none', color: C.text, fontSize: 12, fontWeight: 600, outline: 'none', cursor: 'pointer' }}>
+              {vqOptions.map((o: any) => <option key={o.key} value={o.key} style={{ color: '#000' }}>{o.label} — 5s: {o.credits5} créd · 10s: {o.credits10} créd{o.key === 'economico' ? ' ⭐' : ''}</option>)}
             </select>
           </div>
         )}
