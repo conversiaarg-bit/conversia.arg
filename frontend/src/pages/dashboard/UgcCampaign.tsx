@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { C } from '../../styles/theme';
 import { creativeApi, type UgcScene, type Fmt } from '../../api/creative';
 import { workspaceApi } from '../../api/workspace';
-import CampaignCanvas from './CampaignCanvas';
+import CampaignCanvas, { type Pipe } from './CampaignCanvas';
 
 const toBase64 = (file: File) => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file); });
 
@@ -44,6 +44,8 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   const [productImages, setProductImages] = useState<string[]>([]); // varias fotos → combos
   const [comboImage, setComboImage] = useState<string | undefined>(); // imagen combo generada (todos los productos juntos)
   const [comboLoading, setComboLoading] = useState(false);
+  const [pipe, setPipe] = useState<Pipe>({}); // pipeline único: prompts + imagen + 1 video
+  const [videoDur, setVideoDur] = useState<'5' | '10'>('5');
   const [format] = useState<Fmt>('9:16');
   const [plan, setPlan] = useState<{ creator: string; scenes: UgcScene[] } | null>(null);
   const [runs, setRuns] = useState<Record<string, SceneRun>>({});
@@ -99,42 +101,31 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
 
   const cancelRef = useRef(false);
   const cancelRun = () => { cancelRef.current = true; };
-  const runAll = async () => {
-    if (!plan) return;
-    if (!window.confirm(`Generar la campaña completa usará ${totalCost} créditos (${plan.scenes.length} escenas × ${sceneCost}). Tenés ${credits}. ¿Continuar?`)) return;
-    cancelRef.current = false;
-    setRunning(true); setErr(null);
-    pushMsg('copilot', `Generando la campaña — ${plan.scenes.length} escenas. Te aviso escena por escena…`);
-    let anyVideo = false;
-    for (let i = 0; i < plan.scenes.length; i++) {
-      if (cancelRef.current) { pushMsg('copilot', '⏸ Generación cancelada. Los nodos ya listos quedan guardados.'); break; }
-      const scene = plan.scenes[i];
-      setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
-      try {
-        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, referenceImages: (!comboImage && productImages.length > 1) ? productImages : undefined, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
-        setCredits(res.credits);
-        if (res.videoUrl) anyVideo = true;
-        setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
-        pushMsg('copilot', res.videoUrl ? `✓ Escena ${i + 1} (${scene.title}) lista.` : `✓ Escena ${i + 1} (${scene.title}): imagen lista (el video queda pendiente hasta activar Seedance).`);
-      } catch (e: any) {
-        setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'error' } }));
-        const sc = e?.response?.data?.message === 'SIN_CREDITOS';
-        setErr(sc ? 'Te quedaste sin créditos.' : 'Una escena falló (no se descontaron créditos de esa escena).');
-        pushMsg('copilot', sc ? '🪫 Te quedaste sin créditos. Recargá para seguir.' : `La escena ${i + 1} falló (no se descontaron créditos). Podés reintentar.`);
-        break;
-      }
-    }
-    if (Object.values(runs).every(r => r.status !== 'error')) {
-      pushMsg('copilot', anyVideo
-        ? '🎬 Escenas listas. Podés "Ensamblar video final" y guardar la campaña como proyecto.'
-        : '🖼️ Imágenes de las escenas listas. Los videos quedan pendientes hasta que actives Seedance — mientras tanto podés descargar/guardar las imágenes.');
-    }
-    setRunning(false);
+
+  // ── PIPELINE ÚNICO: 1 solo video (OpenAI prompts + imagen → Seedance video) ──
+  const vqOpt = (vqOptions ?? []).find((o: any) => o.key === vq) ?? (vqOptions ?? [])[0];
+  const oneShotCost = (videoDur === '10' ? vqOpt?.credits10 : vqOpt?.credits5) ?? (videoDur === '10' ? 6 : 3);
+  const runOneShot = async () => {
+    const productRef = comboImage || imageBase64;
+    if (!productRef && productImages.length === 0) { pushMsg('copilot', 'Primero subí al menos una foto del producto (📎 acá o 📷 arriba).'); return; }
+    const refsArr = comboImage ? undefined : (productImages.length > 1 ? productImages : undefined);
+    if (!window.confirm(`Generar el video usará ${oneShotCost} créditos (imagen con OpenAI + 1 video con Seedance). Tenés ${credits}. ¿Continuar?`)) return;
+    setRunning(true); setErr(null); setPipe({});
+    pushMsg('copilot', 'Generando: OpenAI arma el prompt de imagen y de video, crea la imagen del personaje con el producto, y Seedance hace el video…');
+    try {
+      const res = await creativeApi.ugcOneShot({ product: { name: name || 'Producto' }, referenceImage: productRef, referenceImages: refsArr, avatarImage: selectedAvatar, avatarDesc: avatar, brief: cmd, quality: hd ? 'premium' : undefined, videoQuality: vq, format, duration: videoDur });
+      setCredits(res.credits);
+      setPipe({ imagePrompt: res.imagePrompt, videoPrompt: res.videoPrompt, script: res.script, imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined });
+      pushMsg('copilot', res.videoUrl ? '🎥 Video listo — descargalo desde el nodo Video.' : '🖼️ Imagen lista (el video queda pendiente hasta activar Seedance).');
+    } catch (e: any) {
+      const sc = e?.response?.data?.message === 'SIN_CREDITOS';
+      setErr(sc ? 'Te quedaste sin créditos.' : 'Falló la generación (no se descontaron créditos).');
+      pushMsg('copilot', sc ? '🪫 Te quedaste sin créditos.' : 'Falló la generación (no se descontaron créditos). Reintentá.');
+    } finally { setRunning(false); }
   };
 
   const doneCount = Object.values(runs).filter(r => r.status === 'done').length;
   const [saved, setSaved] = useState(false);
-  const viewPlan = plan ?? { creator: 'Tu creador IA', scenes: SKELETON };
 
   // Mantener la campaña al navegar: restaurar al montar + guardar en cada cambio (en memoria).
   const restored = useRef(false);
@@ -209,7 +200,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     setImageBase64(b64);
     if (label) setName(label);
     setRuns(r => Object.fromEntries(Object.keys(r).map(k => [k, { status: 'idle' as SceneStatus }])));
-    setFinalVideoUrl(undefined);
+    setPipe({});
   };
   const onCopilotAttach = async (files: File[]) => {
     const list = Array.isArray(files) ? files : [files];
@@ -258,9 +249,8 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     const t = raw.trim(); if (!t) return;
     const s = t.toLowerCase();
     const scenesNow = plan ? plan.scenes : SKELETON;
-    // Ejecutar / ensamblar
-    if (/\b(gener|ejecut|corr[ée]|render|dale ya)/.test(s)) { pushMsg('user', t); if (!plan) pushMsg('copilot', 'Todavía no armé los nodos con contenido real. Decime el producto y los creo; después los ejecutamos.'); else { pushMsg('copilot', `Perfecto, ejecuto los ${plan.scenes.length} nodos ahora.`); runAll(); } return; }
-    if (/\b(ensambl|uni[rí]|video final|junt[aá])/.test(s)) { pushMsg('user', t); pushMsg('copilot', 'Ensamblando el video final con las escenas listas…'); assembleFinal(); return; }
+    // Ejecutar el pipeline (1 solo video)
+    if (/\b(gener|ejecut|corr[ée]|render|dale ya|ensambl|video final)/.test(s)) { pushMsg('user', t); runOneShot(); return; }
     // Recomendaciones
     if (/(recomend|consej|ayuda|suger|mejor|idea|qu[eé] hago)/.test(s)) { pushMsg('user', t); pushMsg('copilot', recommend()); return; }
     // Borrar escena N
@@ -303,17 +293,6 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     pushMsg('copilot', `¡Buenísimo, "${t}"! Elegí la duración arriba y armo los nodos (Gancho → Mensaje → Se construye → CTA).`);
   };
 
-  const [finalVideoUrl, setFinalVideoUrl] = useState<string | undefined>();
-  const [assembling, setAssembling] = useState(false);
-  const assembleFinal = async () => {
-    if (!plan) return;
-    const urls = plan.scenes.map(s => runs[s.key]?.videoUrl).filter(Boolean) as string[];
-    if (!urls.length) return;
-    setAssembling(true); setErr(null);
-    try { const r = await creativeApi.assembleFinal(urls); setFinalVideoUrl(r.videoUrl); }
-    catch { setErr('No se pudo ensamblar el video final.'); }
-    finally { setAssembling(false); }
-  };
 
   const saveProject = async () => {
     if (!plan) return;
@@ -404,6 +383,12 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
             </select>
           </div>
         )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '6px 10px' }}>
+          <span style={{ fontSize: 12, color: C.textMuted }}>Duración:</span>
+          {(['5', '10'] as const).map(d => (
+            <button key={d} onClick={() => setVideoDur(d)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: videoDur === d ? C.accentDim : 'transparent', color: videoDur === d ? C.accent : C.textMuted }}>{d}s</button>
+          ))}
+        </div>
       </div>
 
       {askDur && (
@@ -432,11 +417,12 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
       {/* Canvas de nodos + Copiloto (siempre visible) */}
       <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }} className="canvas-copilot">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <CampaignCanvas plan={viewPlan} runs={runs} running={running} totalCost={totalCost} productImage={imageBase64} productName={name}
-            onRunAll={plan ? runAll : () => pushMsg('copilot', 'Primero contame qué producto querés promocionar (escribilo en el chat) y armo los nodos por vos.')}
-            onAddScene={addScene} onDeleteScene={deleteScene} finalVideoUrl={finalVideoUrl} assembling={assembling} onAssemble={assembleFinal} onCancel={cancelRun} onTemplates={() => { loadAvatars(); setShowAvatars(true); }} />
+          <CampaignCanvas pipe={pipe} running={running} onRun={runOneShot} cost={oneShotCost}
+            productImages={comboImage ? [comboImage] : productImages} productDesc={name || 'Tu producto'}
+            characterDesc={selectedAvatar ? 'Avatar elegido' : (avatar || 'Persona UGC (sintética)')}
+            onCancel={cancelRun} onTemplates={() => { loadAvatars(); setShowAvatars(true); }} />
         </div>
-        <CopilotPanel messages={messages} running={running || planning} planned={!!plan} onGenerate={runAll} onSend={handleCopilot} onAttach={onCopilotAttach} />
+        <CopilotPanel messages={messages} running={running || planning} planned={true} onGenerate={runOneShot} onSend={handleCopilot} onAttach={onCopilotAttach} />
       </div>
 
       {/* Galería de Plantillas / Avatares */}

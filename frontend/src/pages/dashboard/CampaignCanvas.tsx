@@ -1,22 +1,28 @@
 import { useRef, useState } from 'react';
 import { C } from '../../styles/theme';
-import type { UgcScene } from '../../api/creative';
 
 type SceneStatus = 'idle' | 'running' | 'done' | 'error';
-interface SceneRun { status: SceneStatus; imageUrl?: string; videoUrl?: string }
+
+// Estado del pipeline único (1 solo video)
+export interface Pipe {
+  imagePrompt?: string;
+  videoPrompt?: string;
+  script?: string;
+  imageUrl?: string;
+  videoUrl?: string;
+}
 
 type GroupKey = 'entrada' | 'generacion' | 'salida';
-interface GNode { id: string; x: number; y: number; group: GroupKey; emoji: string; title: string; model?: string; badges: string[]; status: SceneStatus; media?: string; poster?: string; text?: string; scene?: UgcScene }
+interface GNode { id: string; x: number; y: number; group: GroupKey; emoji: string; title: string; model?: string; badges: string[]; status: SceneStatus; media?: string; poster?: string; text?: string }
 
 const W = 250, H = 220;
 const GROUPS: { key: GroupKey; label: string; color: string }[] = [
-  { key: 'entrada', label: 'Entrada', color: '#4da6ff' },
+  { key: 'entrada', label: 'Input', color: '#4da6ff' },
   { key: 'generacion', label: 'Generación', color: '#7c5cfc' },
   { key: 'salida', label: 'Salida', color: '#00d68f' },
 ];
-const EDGE = '#2ee6c4'; // teal de los conectores
+const EDGE = '#2ee6c4';
 
-// Descargar la media de un nodo (imagen o video) como archivo
 async function dlNode(url: string, name: string) {
   try {
     const r = await fetch(url); const b = await r.blob();
@@ -26,21 +32,15 @@ async function dlNode(url: string, name: string) {
   } catch { window.open(url, '_blank'); }
 }
 
-// Canvas de flujo estilo pipeline: Entrada → Generación → Salida.
-// Cada nodo lleva su modelo de IA en el header; nodos de texto o de media; Copiloto externo.
-export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCost, onAddScene, onDeleteScene, finalVideoUrl, assembling, onAssemble, productImage, productName, onCancel, onTemplates }: {
-  plan: { creator: string; scenes: UgcScene[] };
-  runs: Record<string, SceneRun>;
+// Pipeline fijo: Input → OpenAI (prompts + imagen) → Seedance (1 video) → Salida.
+export default function CampaignCanvas({ pipe, running, onRun, cost, productImages, productDesc, characterDesc, onCancel, onTemplates }: {
+  pipe: Pipe;
   running: boolean;
-  onRunAll: () => void;
-  totalCost: number;
-  onAddScene: () => void;
-  onDeleteScene: (key: string) => void;
-  finalVideoUrl?: string;
-  assembling?: boolean;
-  onAssemble?: () => void;
-  productImage?: string;
-  productName?: string;
+  onRun: () => void;
+  cost: number;
+  productImages?: string[];
+  productDesc?: string;
+  characterDesc?: string;
   onCancel?: () => void;
   onTemplates?: () => void;
 }) {
@@ -51,41 +51,35 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const nodeDrag = useRef<{ id: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
 
-  const doneCount = plan.scenes.filter(s => runs[s.key]?.status === 'done').length;
-  const runningCount = plan.scenes.filter(s => runs[s.key]?.status === 'running').length;
-  const queued = Math.max(0, plan.scenes.length - doneCount - runningCount);
+  const st = (filled: unknown): SceneStatus => filled ? 'done' : (running ? 'running' : 'idle');
+  const done = !!pipe.videoUrl;
 
-  // ── Layout en 3 columnas (Entrada → Generación → Salida) ──
-  const IN_X = 40, GEN_X = 380, OUT_X = 760, GAP = 250;
+  // ── Layout: Input (col A) → Prompts (col B) → Personaje (col C) → Video (col D)
+  const A = 40, B = 360, Cx = 700, D = 1040, GAP = 250;
   const nodes: GNode[] = [];
-  // Entrada
-  nodes.push({ id: 'product', x: IN_X, y: 40, group: 'entrada', emoji: '📦', title: 'Imagen de producto', model: 'Referencia', badges: ['imagen'], status: 'done', poster: productImage, text: productImage ? undefined : 'Subí una foto del producto' });
-  nodes.push({ id: 'desc', x: IN_X, y: 40 + GAP, group: 'entrada', emoji: '📝', title: 'Descripción de producto', model: 'Static', badges: [], status: 'done', text: productName || 'Tu producto' });
-  nodes.push({ id: 'char', x: IN_X, y: 40 + GAP * 2, group: 'entrada', emoji: '🧑‍🎤', title: 'Descripción de personaje', model: 'Static', badges: [], status: 'done', text: plan.creator });
-  // Generación (una por escena)
-  plan.scenes.forEach((s, i) => {
-    const run = runs[s.key] ?? { status: 'idle' as SceneStatus };
-    nodes.push({
-      id: s.key, x: GEN_X, y: 40 + i * GAP, group: 'generacion',
-      emoji: ['🎣', '💬', '⚡', '🎯'][i] ?? '🎬',
-      title: `Escena ${i + 1} · ${s.title}`, model: 'OpenAI → Seedance',
-      badges: ['imagen: OpenAI', 'video: Seedance'], status: run.status,
-      media: run.videoUrl, poster: run.imageUrl,
-      text: s.script || s.imagePrompt || `Persona con el producto — ${s.seconds}s`, scene: s,
-    });
-  });
-  // Salida
-  const finalDone = doneCount === plan.scenes.length && plan.scenes.length > 0;
-  const cy = 40 + Math.max(0, (plan.scenes.length - 1) * GAP) / 2;
-  nodes.push({ id: 'final', x: OUT_X, y: cy, group: 'salida', emoji: '🎞️', title: 'Video final', model: 'Ensamblado', badges: ['9:16'], status: finalVideoUrl ? 'done' : assembling ? 'running' : 'idle', media: finalVideoUrl, text: finalVideoUrl ? undefined : '9:16 · con subtítulos' });
+  // Input
+  nodes.push({ id: 'product', x: A, y: 40, group: 'entrada', emoji: '📦', title: 'Imágenes de producto', model: 'Input', badges: productImages?.length ? [`${productImages.length} img`] : ['imagen'], status: 'done', poster: productImages?.[0], text: productImages?.length ? undefined : 'Subí fotos del producto' });
+  nodes.push({ id: 'pdesc', x: A, y: 40 + GAP, group: 'entrada', emoji: '📝', title: 'Descripción de producto', model: 'Static', badges: [], status: 'done', text: productDesc || 'Tu producto' });
+  nodes.push({ id: 'cdesc', x: A, y: 40 + GAP * 2, group: 'entrada', emoji: '🧑', title: 'Descripción de personaje', model: 'Static', badges: [], status: 'done', text: characterDesc || 'Persona UGC (avatar)' });
+  // Generación — prompts (OpenAI)
+  nodes.push({ id: 'master', x: B, y: 40, group: 'generacion', emoji: '✨', title: 'Prompt maestro', model: 'GPT-4o-mini', badges: ['OpenAI'], status: st(pipe.imagePrompt), text: pipe.imagePrompt ? 'Prompts de imagen y video generados ✓' : 'OpenAI arma el prompt de imagen y de video' });
+  nodes.push({ id: 'imgprompt', x: B, y: 40 + GAP, group: 'generacion', emoji: '🖼️', title: 'Prompt de imagen', model: 'OpenAI', badges: ['prompt'], status: st(pipe.imagePrompt), text: pipe.imagePrompt || 'Prompt de la imagen (se genera)' });
+  nodes.push({ id: 'vidprompt', x: B, y: 40 + GAP * 2, group: 'generacion', emoji: '🎬', title: 'Prompt de video', model: 'OpenAI', badges: ['prompt'], status: st(pipe.videoPrompt), text: pipe.videoPrompt || 'Prompt del video (se genera)' });
+  // Generación — imagen del personaje (OpenAI)
+  nodes.push({ id: 'chargen', x: Cx, y: 40 + GAP, group: 'generacion', emoji: '🧑‍🎤', title: 'Generación de personaje', model: 'gpt-image-1', badges: ['imagen: OpenAI'], status: st(pipe.imageUrl), poster: pipe.imageUrl, text: pipe.imageUrl ? undefined : 'La persona con el producto exacto' });
+  // Salida — video (Seedance)
+  nodes.push({ id: 'video', x: D, y: 40 + GAP, group: 'salida', emoji: '🎥', title: 'Video final', model: 'Seedance 1.5', badges: ['video: Seedance', '9:16'], status: st(pipe.videoUrl), media: pipe.videoUrl, text: pipe.videoUrl ? undefined : 'El video (Seedance usa el prompt de video)' });
 
   nodes.forEach(n => { const p = positions[n.id]; if (p) { n.x = p.x; n.y = p.y; } });
 
   const byId = (id: string) => nodes.find(n => n.id === id)!;
-  const edges: [string, string][] = [];
-  plan.scenes.forEach(s => { edges.push(['product', s.key]); edges.push(['desc', s.key]); edges.push(['char', s.key]); edges.push([s.key, 'final']); });
+  const edges: [string, string][] = [
+    ['product', 'master'], ['pdesc', 'master'], ['cdesc', 'master'],
+    ['master', 'imgprompt'], ['master', 'vidprompt'],
+    ['imgprompt', 'chargen'], ['product', 'chargen'],
+    ['vidprompt', 'video'], ['chargen', 'video'],
+  ];
 
-  // Rects de grupo calculados de sus nodos
   const groupRects = GROUPS.map(g => {
     const ns = nodes.filter(n => n.group === g.key);
     const minX = Math.min(...ns.map(n => n.x)) - 20, minY = Math.min(...ns.map(n => n.y)) - 40;
@@ -114,32 +108,27 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
     drag.current = null;
   };
 
-  const worldW = 1010, worldH = Math.max(600, 40 + plan.scenes.length * GAP + 160);
+  const worldW = 1340, worldH = 40 + GAP * 3 + 120;
 
   return (
     <div style={{ position: 'relative', height: 'calc(100vh - 150px)', minHeight: 480, borderRadius: 16, border: `1px solid ${C.border}`, background: `radial-gradient(circle at 1px 1px, #1c1c2e 1px, transparent 0) 0 0/24px 24px, #0a0a14`, overflow: 'hidden' }}>
       {/* Toolbar superior */}
       <div style={{ position: 'absolute', top: 12, left: 12, right: 12, zIndex: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', pointerEvents: 'none' }}>
         <div style={{ background: '#0f0f1a', border: `1px solid ${C.border}`, borderRadius: 10, padding: '6px 12px', fontSize: 12, color: C.textMuted, pointerEvents: 'auto' }}>
-          Flujo · <b style={{ color: C.text }}>{nodes.length} nodos</b> · {doneCount}/{plan.scenes.length} escenas · <b style={{ color: C.accent }}>{totalCost} créditos</b>
+          Pipeline · <b style={{ color: C.text }}>1 video</b> · imagen OpenAI + video Seedance · <b style={{ color: C.accent }}>{cost} créditos</b>
         </div>
         <div style={{ display: 'flex', gap: 8, pointerEvents: 'auto', alignItems: 'center' }}>
           {running ? (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: '#0f0f1a', border: `1px solid ${C.amber}66`, borderRadius: 10, padding: '7px 13px', fontSize: 12.5, color: C.text }}>
                 <span style={{ width: 13, height: 13, borderRadius: '50%', border: `2px solid ${C.surface2}`, borderTopColor: C.amber, display: 'inline-block', animation: 'cvspin 1s linear infinite' }} />
-                <b>{doneCount}/{plan.scenes.length}</b>
-                <span style={{ color: C.amber }}>· {runningCount} generando</span>
-                {queued > 0 && <span style={{ color: C.textMuted }}>· {queued} en cola</span>}
+                <b>Generando…</b>
+                <span style={{ color: C.textMuted }}>{pipe.imageUrl ? 'video' : pipe.imagePrompt ? 'imagen' : 'prompts'}</span>
               </div>
               {onCancel && <button onClick={onCancel} style={{ ...tbtn, borderColor: C.red, color: C.red }}>✕ Cancelar</button>}
             </>
           ) : (
-            <>
-              <button onClick={() => onAddScene()} style={tbtn}>+ Nodo</button>
-              {finalDone && !finalVideoUrl && onAssemble && <button onClick={onAssemble} disabled={assembling} style={{ ...tbtn, background: C.gradGreen, color: '#04140d', border: 'none', fontWeight: 700 }}>{assembling ? 'Ensamblando…' : '🎬 Ensamblar'}</button>}
-              <button onClick={onRunAll} style={{ ...tbtn, background: C.accent, color: '#fff', border: 'none', fontWeight: 700 }}>▶ Ejecutar todo</button>
-            </>
+            <button onClick={onRun} style={{ ...tbtn, background: C.accent, color: '#fff', border: 'none', fontWeight: 700 }}>{done ? '↻ Regenerar video' : '▶ Generar video'}</button>
           )}
         </div>
         <style>{`@keyframes cvspin{to{transform:rotate(360deg)}}@keyframes cvbar{0%{left:-42%}100%{left:100%}}@keyframes cvdash{to{stroke-dashoffset:-16}}`}</style>
@@ -148,7 +137,6 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
       {/* Lienzo */}
       <div onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp} style={{ position: 'absolute', inset: 0, cursor: nodeDrag.current ? 'grabbing' : drag.current ? 'grabbing' : 'grab' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
-          {/* Grupos */}
           {groupRects.map(g => (
             <div key={g.key} style={{ position: 'absolute', left: g.x, top: g.y, width: g.w, height: g.h, borderRadius: 20, border: `1.5px solid ${g.color}44`, background: `${g.color}0d` }}>
               <div style={{ position: 'absolute', top: 10, left: 14, display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: 0.8 }}>
@@ -156,7 +144,6 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
               </div>
             </div>
           ))}
-          {/* Edges */}
           <svg width={worldW} height={worldH} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', overflow: 'visible' }}>
             {edges.map(([a, b], i) => {
               const t = byId(b);
@@ -186,7 +173,7 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
         <ZBtn onClick={() => { setZoom(0.7); setPan({ x: 30, y: 20 }); }}>⤢</ZBtn>
       </div>
 
-      {/* Plantillas / Avatares (barra inferior) */}
+      {/* Plantillas / Avatares */}
       {onTemplates && (
         <button onClick={onTemplates} title="Plantillas / Avatares — elegí una persona y reutilizala" style={{ position: 'absolute', bottom: 12, left: 320, zIndex: 4, display: 'flex', alignItems: 'center', gap: 8, background: '#0f0f1a', border: `1px solid ${C.borderBright}`, borderRadius: 10, padding: '9px 14px', color: C.text, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
           🧑 Plantillas
@@ -207,16 +194,9 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
           {sel.media && <video src={sel.media} controls loop style={{ width: '100%', borderRadius: 10, marginBottom: 12, background: C.surface2 }} />}
           {sel.poster && !sel.media && <img src={sel.poster} alt="" style={{ width: '100%', borderRadius: 10, marginBottom: 12 }} />}
           {(sel.media || sel.poster) && (
-            <button onClick={() => dlNode((sel.media || sel.poster)!, `escena-${sel.id}`)} style={{ width: '100%', marginBottom: 12, background: C.accent, color: '#fff', border: 'none', borderRadius: 9, padding: '9px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>⬇ Descargar {sel.media ? 'video' : 'imagen'}</button>
+            <button onClick={() => dlNode((sel.media || sel.poster)!, sel.id)} style={{ width: '100%', marginBottom: 12, background: C.accent, color: '#fff', border: 'none', borderRadius: 9, padding: '9px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>⬇ Descargar {sel.media ? 'video' : 'imagen'}</button>
           )}
-          {sel.scene ? (
-            <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.6 }}>
-              <p style={{ margin: '0 0 8px' }}><b style={{ color: C.text }}>Guion:</b> {sel.scene.script || '—'}</p>
-              <p style={{ margin: '0 0 8px', fontSize: 12 }}><b style={{ color: C.text }}>Escena:</b> {sel.scene.imagePrompt || '—'}</p>
-              <p style={{ margin: '0 0 14px', fontSize: 12 }}><b style={{ color: C.text }}>Movimiento:</b> {sel.scene.videoPrompt || '—'}</p>
-              <button onClick={() => { onDeleteScene(sel.scene!.key); setSel(null); }} style={{ background: 'transparent', border: `1px solid ${C.red}`, color: C.red, borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>🗑 Borrar nodo</button>
-            </div>
-          ) : sel.text ? <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.6 }}>{sel.text}</div> : null}
+          {sel.text && <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{sel.text}</div>}
         </div>
       )}
     </div>
@@ -225,29 +205,25 @@ export default function CampaignCanvas({ plan, runs, running, onRunAll, totalCos
 
 function Node({ n, onDown, selected }: { n: GNode; onDown: (e: React.MouseEvent, n: GNode) => void; selected: boolean }) {
   const border = selected ? C.accent : n.status === 'running' ? C.amber : n.status === 'done' ? C.green : '#2a2a44';
-  const STt: Record<SceneStatus, string> = { idle: 'Planificado', running: '● Generando', done: '✓ Listo', error: '✕ Error' };
+  const STt: Record<SceneStatus, string> = { idle: 'En espera', running: '● Generando', done: '✓ Listo', error: '✕ Error' };
   const STc: Record<SceneStatus, string> = { idle: C.textMuted, running: C.amber, done: C.green, error: C.red };
   const hasMedia = !!(n.media || n.poster);
   return (
     <div onMouseDown={e => onDown(e, n)} style={{ position: 'absolute', left: n.x, top: n.y, width: W, height: H, background: '#12122a', border: `2px solid ${border}`, borderRadius: 14, overflow: 'hidden', cursor: 'grab', boxShadow: selected ? `0 0 0 3px ${C.accentDim}` : '0 8px 20px -12px #000', display: 'flex', flexDirection: 'column' }}>
-      {/* Header: emoji + título (izq) · modelo (der) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderBottom: `1px solid #ffffff10` }}>
         <span style={{ fontSize: 14 }}>{n.emoji}</span>
         <span style={{ fontWeight: 700, fontSize: 11.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{n.title}</span>
-        {n.model && <span style={{ fontSize: 9.5, fontWeight: 600, color: '#9a9ac2', fontFamily: "'DM Mono',monospace", background: '#ffffff0a', border: '1px solid #ffffff14', borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap', maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.model}</span>}
+        {n.model && <span style={{ fontSize: 9.5, fontWeight: 600, color: '#9a9ac2', fontFamily: "'DM Mono',monospace", background: '#ffffff0a', border: '1px solid #ffffff14', borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.model}</span>}
       </div>
-      {/* Cuerpo: media o texto */}
       <div style={{ flex: 1, background: hasMedia ? '#080814' : '#0d0d1e', position: 'relative', display: hasMedia ? 'grid' : 'block', placeItems: 'center', overflow: 'hidden' }}>
         {n.media ? <video src={n.media} muted loop autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           : n.poster ? <img src={n.poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-          : <div style={{ padding: '8px 10px', fontSize: 10.5, lineHeight: 1.45, color: '#b9b9d6', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{n.text}</div>}
-        {/* Badges de modelo secundarios (solo en nodos con media) */}
+          : <div style={{ padding: '8px 10px', fontSize: 10.5, lineHeight: 1.45, color: '#b9b9d6', display: '-webkit-box', WebkitLineClamp: 7, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{n.text}</div>}
         {hasMedia && n.badges.length > 0 && (
           <div style={{ position: 'absolute', bottom: 4, left: 4, right: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {n.badges.slice(0, 2).map(b => <span key={b} style={{ fontSize: 8.5, fontWeight: 600, color: '#cfe0ff', background: '#000a', borderRadius: 5, padding: '1px 5px' }}>{b}</span>)}
           </div>
         )}
-        {/* Estado (esquina) */}
         <span style={{ position: 'absolute', top: 6, right: 6, fontSize: 9, fontWeight: 700, color: STc[n.status], background: '#000000aa', borderRadius: 5, padding: '1px 6px' }}>{STt[n.status]}</span>
         {n.status === 'running' && (
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 4, background: '#0007', overflow: 'hidden' }}>

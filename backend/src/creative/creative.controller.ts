@@ -183,6 +183,28 @@ export class CreativeController {
     return { ...(result as any), credits, creditsUsed };
   }
 
+  // PIPELINE ÚNICO: prompts (OpenAI) → imagen (OpenAI) → 1 video (Seedance). Cobra UN video.
+  @Post('ugc-oneshot') @HttpCode(HttpStatus.OK)
+  @Throttle({ medium: { limit: 8, ttl: 60000 } })
+  async ugcOneShot(@Body() body: any, @Request() req: any) {
+    const hasVideo = this.svc.videoAvailable;
+    await this.assertFree(req, hasVideo ? 'video' : 'image');
+    const secs = body?.duration === '10' ? 10 : 5;
+    const qO = VIDEO_QUALITY[videoQuality(body?.videoQuality)];
+    const imgOp: CreditOperation = body?.quality === 'premium' ? 'image_premium' : 'image_standard';
+    const billing = hasVideo
+      ? { operation: 'ugc_video_10' as CreditOperation, amount: videoCredits(body?.videoQuality, secs), provider: PROVIDERS.video, model: PROVIDERS.seedance.model, seconds: secs, providerCostUsd: videoProviderCost(body?.videoQuality, secs), resolution: qO.resolution }
+      : { operation: imgOp, amount: CREDIT_COSTS[imgOp], provider: PROVIDERS.image, model: PROVIDERS.openaiImageModel };
+    const { result, credits, creditsUsed } = await this.billed(req, billing, () => this.svc.generateOneShotUGC(body));
+    const r = result as any;
+    this.svc.saveCreative(req.user.id, {
+      name: `UGC — ${body?.product?.name ?? 'producto'}`, format: body?.format ?? '9:16',
+      type: r.videoUrl ? 'video' : 'image', imageUrl: r.imageUrl, videoUrl: r.videoUrl,
+      studio: { product: body?.product, imagePrompt: r.imagePrompt, videoPrompt: r.videoPrompt }, creditsUsed,
+    }).catch(() => { /* no bloquea */ });
+    return { ...r, credits, creditsUsed };
+  }
+
   // ── Campaña UGC (agente planifica escenas tipo nodos) ───────────────────────
   @Post('ugc-campaign/plan') @HttpCode(HttpStatus.OK)
   async ugcPlan(@Body() body: { product: ProductInfo; creatorKey?: string }, @Request() req: any) {

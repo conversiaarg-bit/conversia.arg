@@ -311,6 +311,59 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     return { imageUrl, videoUrl: await this.persist(vid.url, 'video'), model: vid.model, seconds: vid.seconds, sceneKey: input.scene.key };
   }
 
+  // ── PIPELINE ÚNICO (1 solo video) ────────────────────────────────────────────
+  // Input (imágenes + descripciones) → OpenAI arma los prompts (imagen + video) →
+  // OpenAI genera la imagen del personaje con el producto EXACTO → Seedance genera UN video.
+  async generateOneShotUGC(input: {
+    product: ProductInfo; referenceImages?: string[]; referenceImage?: string;
+    avatarImage?: string; avatarDesc?: string; brief?: string;
+    quality?: 'standard' | 'premium'; videoQuality?: string; format?: Fmt; duration?: '5' | '10';
+  }) {
+    const productPics = (input.referenceImages?.length ? input.referenceImages : [input.referenceImage]).filter(Boolean) as string[];
+    const hasRef = productPics.length > 0;
+    const characterDesc = input.avatarDesc?.trim()
+      || 'una persona sintética (no real, no celebridad), estilo creador UGC auténtico';
+
+    // 1) PROMPT MAESTRO (OpenAI) → prompt de imagen + prompt de video (en inglés)
+    const { fragments, rest } = expandCommands(input.brief);
+    const cmdLine = [...fragments, rest].filter(Boolean).join('; ');
+    const plan = await this.openai.chatJSON<{ imagePrompt: string; videoPrompt: string; script: string }>(
+      'Sos director de UGC. Diseñás UN solo video vertical donde una persona muestra el producto (o combo completo) a cámara, estética selfie orgánica de celular.',
+      `Producto: ${JSON.stringify(input.product)}. Personaje: ${characterDesc}.${cmdLine ? ' Directivas: ' + cmdLine + '.' : ''}
+Devolvé JSON con:
+- "imagePrompt": EN INGLÉS, la escena/foto: la persona sosteniendo y mostrando ${hasRef ? 'EL/LOS producto(s) EXACTO(s) de la(s) imagen(es) de referencia' : `"${input.product.name}"`}, UGC selfie vertical, luz natural, sin watermark, sin texto.
+- "videoPrompt": EN INGLÉS, el movimiento natural (la persona muestra el producto a cámara, gestos naturales, leve movimiento handheld, ~5-10s).
+- "script": la frase corta en español que dice a cámara.
+JSON: { "imagePrompt": "...", "videoPrompt": "...", "script": "..." }`,
+      500,
+    );
+
+    // 2) GENERACIÓN DE PERSONAJE (OpenAI imagen) con el producto EXACTO
+    const refs = [input.avatarImage, ...productPics].filter(Boolean) as string[];
+    const img = await this.imageProvider.generate({
+      prompt: `${plan.imagePrompt}${hasRef ? ' ' + PRESERVE_PRODUCT : ''}`,
+      format: input.format ?? '9:16', quality: input.quality ?? 'standard',
+      referenceImage: refs[0], referenceImages: refs.length > 1 ? refs : undefined,
+      preserveExact: hasRef,
+    });
+    const imageUrl = await this.persist(img.dataUrl, 'image');
+
+    // 3) GENERACIÓN DE VIDEO (Seedance) con el prompt de video
+    if (!this.videoProvider.enabled) {
+      return { imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script, imageUrl, videoUrl: null, videoPending: true };
+    }
+    const dur = input.duration === '10' ? 10 : 5;
+    const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
+    const vid = await this.videoProvider.generate({
+      image: img.dataUrl, prompt: plan.videoPrompt || 'natural UGC movement, person showing the product to camera',
+      duration: dur, resolution: q.resolution, audio: q.audio,
+    });
+    return {
+      imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script,
+      imageUrl, videoUrl: await this.persist(vid.url, 'video'), model: vid.model, seconds: vid.seconds,
+    };
+  }
+
   // ── Voz (TTS real) ───────────────────────────────────────────────────────────
   async generateVoice(text: string, voiceKey?: string): Promise<{ audioUrl: string }> {
     const dataUrl = await this.openai.speech(text || 'Hola, esto es una muestra de voz.', voiceKey);
