@@ -67,6 +67,14 @@ export class CreativeController {
     return { free: true, remaining };
   }
 
+  // Motor de ad-package (OpenAI): hooks + guion + prompt imagen + prompt video + copy + 3 variaciones.
+  @Post('ad-package') @HttpCode(HttpStatus.OK)
+  async adPackage(@Body() body: any, @Request() req: any) {
+    const r = await this.svc.generateAdPackage(body);
+    await this.cost.log({ userId: req.user.id, provider: 'openai', model: PROVIDERS.openaiChatModel, operation: 'ad_package', estimatedProviderCostUsd: 0.003, creditsConsumed: 0, status: 'completed' }).catch(() => {});
+    return r;
+  }
+
   // Estrategia de campaña (OpenAI) — reemplaza el /ai/analyze-campaign (Anthropic, sin key).
   @Post('campaign-strategy') @HttpCode(HttpStatus.OK)
   async campaignStrategy(@Body() body: { name?: string; description?: string; objective?: string }, @Request() req: any) {

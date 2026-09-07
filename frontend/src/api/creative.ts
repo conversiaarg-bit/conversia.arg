@@ -28,6 +28,10 @@ export const creativeApi = {
   campaignStrategy: (body: { name?: string; description?: string; objective?: string }) =>
     D<any>(api.post('/creative/campaign-strategy', body, { timeout: 60_000 })),
 
+  // Motor de ad-package: hooks + guion + prompts (imagen/video) + copy + 3 variaciones
+  adPackage: (body: { product: ProductInfo; referenceImage?: string; referenceImages?: string[]; avatarUsar?: boolean; seconds?: number }) =>
+    D<any>(api.post('/creative/ad-package', body, { timeout: 90_000 })),
+
   strategy: (body: { product: ProductInfo; objective: string; style: string }) =>
     D<Strategy>(api.post('/creative/strategy', body, { timeout: 60_000 })),
 

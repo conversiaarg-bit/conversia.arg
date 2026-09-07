@@ -448,6 +448,36 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
     }
   }
 
+  // ── MOTOR DE AD-PACKAGE: de un producto → paquete publicitario completo ──────
+  // hooks, guion de voz, prompt de imagen, prompt de video (Seedance), copy y 3 variaciones.
+  // Todo en español (AR), producto EXACTO, orientado a conversión. Una sola llamada a OpenAI.
+  async generateAdPackage(input: { product: ProductInfo; referenceImage?: string; referenceImages?: string[]; avatarUsar?: boolean; seconds?: number }) {
+    const pic = (input.referenceImages?.length ? input.referenceImages[0] : input.referenceImage) || undefined;
+    const { truth } = await this.extractProductTruth(pic);
+    const secs = Math.min(10, Math.max(6, input.seconds ?? 8));
+    const avatar = input.avatarUsar !== false; // por defecto incluye persona
+    const pkg = await this.openai.chatJSON<any>(
+      'Sos un MOTOR backend de creativos publicitarios de e-commerce para Meta/TikTok Ads (Argentina). NO charlás: devolvés SOLO JSON estricto. Reglas: nunca modificar el diseño del producto, nunca inventar características, basar todo en el JSON del producto, SIEMPRE audio con voz, estilo performance (no cine), idioma ESPAÑOL rioplatense, tono vendedor natural y creíble, foco en conversión. Si el input es incompleto, autocompletá con lógica. Guiones cortos (6-10s) para bajar costo de render.',
+      `INPUT producto: ${JSON.stringify(input.product)}.${truth}\nAvatar/persona en video: ${avatar ? 'SÍ (mostrar interacción humana con el producto)' : 'NO (solo producto + voz en off)'}. Duración objetivo: ${secs}s. 9:16 vertical.
+
+Generá el paquete y devolvé SOLO este JSON (todo en español AR, salvo las secciones técnicas de los video_prompt que van en inglés PERO con el "Voice script" citado en español):
+{
+  "hooks": ["curiosidad (<8 palabras)", "problema-solución (<8)", "oferta (<8)"],
+  "voice_script": "guion 6-10s: gancho(2s) + beneficio principal + beneficio secundario + CTA. Español natural, vendedor.",
+  "image_prompt": "prompt para IA de imagen: escena realista comercial, producto EXACTO del JSON, fondo contextual, iluminación comercial, con textos de venta EN ESPAÑOL (titular/precio si hay/beneficios), estilo MercadoLibre/Meta Ads.",
+  "video_prompt": "prompt Seedance con este formato EXACTO: 'Use @Image1 as the exact product reference. Do not modify the product in any way. Scene: <...>. Action: <human interaction with the product>. Camera: medium shot, slow push-in, detail close-up. Lighting: natural realistic commercial. Style: UGC Meta Ads, not cinematic. Audio: Spanish (Argentina), clear human voice, subtle ambient. Voice script: \\"<voice_script>\\". The video MUST include audible voice narration, NOT silent. Constraints: no product deformation, no extra objects, no burned subtitles, no english text, realistic physics. Format: 9:16, ${secs}s, 1080p.'",
+  "copy": { "headline": "titular (<6 palabras)", "text": "texto primario 1-2 líneas", "cta": "CTA corto" },
+  "variations": {
+    "ugc": { "video_prompt": "variante UGC: persona hablando a cámara e interactuando con el producto", "voice_script": "guion UGC" },
+    "demo": { "video_prompt": "variante DEMO: sin persona, foco en el uso del producto, solo voz en off", "voice_script": "guion demo" },
+    "hard_sell": { "video_prompt": "variante HARD SELL: oferta agresiva, foco en el precio, ritmo rápido", "voice_script": "guion hard sell con precio" }
+  }
+}`,
+      1500,
+    );
+    return pkg;
+  }
+
   // ── Voz (TTS real) ───────────────────────────────────────────────────────────
   async generateVoice(text: string, voiceKey?: string): Promise<{ audioUrl: string }> {
     const dataUrl = await this.openai.speech(text || 'Hola, esto es una muestra de voz.', voiceKey);
