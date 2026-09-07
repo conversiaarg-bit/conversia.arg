@@ -27,7 +27,7 @@ export class SeedanceVideoProvider implements VideoProvider {
     const headers = { Authorization: `Key ${apiKey}`, 'Content-Type': 'application/json' };
 
     this.logger.log(`[Seedance] ${model} — i2v ${input.duration}s`);
-    const res = await axios.post(apiUrl, body, { headers, timeout: 180_000 });
+    const res = await axios.post(apiUrl, body, { headers, timeout: 280_000 });
     const d = res.data ?? {};
 
     // Respuesta directa (fal.run bloquea hasta terminar)
@@ -40,7 +40,7 @@ export class SeedanceVideoProvider implements VideoProvider {
       const statusUrl = d.status_url ?? `${apiUrl}/requests/${reqId}/status`;
       const resultUrl = d.response_url ?? `${apiUrl}/requests/${reqId}`;
       const started = Date.now();
-      while (Date.now() - started < 180_000) {
+      while (Date.now() - started < 280_000) {
         await new Promise(r => setTimeout(r, 5_000));
         const st = await axios.get(statusUrl, { headers, timeout: 20_000 });
         const status = (st.data?.status ?? '').toUpperCase();

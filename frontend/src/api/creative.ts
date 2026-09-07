@@ -42,7 +42,7 @@ export const creativeApi = {
     D<{ variant: ImageVariant; credits: number; creditsUsed: number }>(api.post('/creative/image', body, { timeout: 120_000, ...idem() })),
 
   video: (body: { imageBase64: string; product: ProductInfo; style: string; duration: '5' | '10'; videoQuality?: string }) =>
-    D<{ videoUrl: string; animationPrompt: string; credits: number; creditsUsed: number }>(api.post('/creative/video', body, { timeout: 180_000, ...idem() })),
+    D<{ videoUrl: string; animationPrompt: string; credits: number; creditsUsed: number }>(api.post('/creative/video', body, { timeout: 300_000, ...idem() })),
 
   copy: (body: { product: ProductInfo; objective: string; style: string }) =>
     D<{ variants: CopyVariant[]; credits: number; creditsUsed: number }>(api.post('/creative/copy', body, { timeout: 60_000 })),
@@ -56,17 +56,17 @@ export const creativeApi = {
   ugcAuto: (body: { product: ProductInfo }) =>
     D<{ creatorKey: string; scene: string; hook: string; action: string; cta: string }>(api.post('/creative/ugc-auto', body, { timeout: 60_000 })),
   ugc: (body: { product: ProductInfo; creatorKey?: string; scene?: string; hook?: string; action?: string; cta?: string; duration?: '5' | '10'; referenceImage?: string; format?: Fmt; videoQuality?: string }) =>
-    D<{ imageUrl: string; videoUrl: string; creator: { key: string; name: string }; script: any; credits: number; creditsUsed: number }>(api.post('/creative/ugc', body, { timeout: 200_000, ...idem() })),
+    D<{ imageUrl: string; videoUrl: string; creator: { key: string; name: string }; script: any; credits: number; creditsUsed: number }>(api.post('/creative/ugc', body, { timeout: 300_000, ...idem() })),
 
   // Pipeline único: OpenAI arma prompts → OpenAI imagen → Seedance 1 video
   ugcOneShot: (body: { product: ProductInfo; referenceImages?: string[]; referenceImage?: string; avatarImage?: string; avatarDesc?: string; brief?: string; scriptOverride?: string; quality?: 'standard' | 'premium'; videoQuality?: string; format?: Fmt; duration?: '5' | '10' }) =>
-    D<{ imagePrompt: string; videoPrompt: string; script: string; imageUrl: string; videoUrl: string | null; videoPending?: boolean; credits: number; creditsUsed: number }>(api.post('/creative/ugc-oneshot', body, { timeout: 220_000, ...idem() })),
+    D<{ imagePrompt: string; videoPrompt: string; script: string; imageUrl: string; videoUrl: string | null; videoPending?: boolean; credits: number; creditsUsed: number }>(api.post('/creative/ugc-oneshot', body, { timeout: 300_000, ...idem() })),
 
   // Campaña UGC (agente planifica escenas → nodos)
   ugcPlan: (body: { product: ProductInfo; creatorKey?: string }) =>
     D<{ creator: string; scenes: UgcScene[] }>(api.post('/creative/ugc-campaign/plan', body, { timeout: 90_000 })),
   ugcScene: (body: { product: ProductInfo; scene: UgcScene; referenceImage?: string; referenceImages?: string[]; avatarImage?: string; format?: Fmt; brief?: string; quality?: 'standard' | 'premium'; avatarDesc?: string; videoQuality?: string }) =>
-    D<{ imageUrl: string; videoUrl: string | null; videoPending?: boolean; sceneKey: string; credits: number; creditsUsed: number }>(api.post('/creative/ugc-campaign/scene', body, { timeout: 200_000, ...idem() })),
+    D<{ imageUrl: string; videoUrl: string | null; videoPending?: boolean; sceneKey: string; credits: number; creditsUsed: number }>(api.post('/creative/ugc-campaign/scene', body, { timeout: 300_000, ...idem() })),
 
   tts: (text: string, voice?: string) => D<{ audioUrl: string }>(api.post('/creative/tts', { text, voice }, { timeout: 60_000 })),
   assembleFinal: (videoUrls: string[], musicUrl?: string) => D<{ videoUrl: string }>(api.post('/creative/ugc-campaign/assemble', { videoUrls, musicUrl }, { timeout: 200_000 })),
