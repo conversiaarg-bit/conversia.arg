@@ -89,11 +89,16 @@ async function downloadImage(url: string, name: string) {
   } catch { window.open(url, '_blank'); }
 }
 
+// Cache EN MEMORIA (sobrevive navegación dentro de la app; no se pierde el video al volver).
+const studioCache: { s?: StudioState; view?: 'launcher' | 'studio' | 'campaign' | 'history'; step?: number; maxStep?: number } = {};
+const isUrl = (u?: string) => !!u && /^https?:\/\//.test(u);
+
 // ─────────────────────────────────────────────────────────────────────────────
 export default function AICreativeStudio() {
   const nav = useNavigate();
   const [view, setView] = useState<'launcher' | 'studio' | 'campaign' | 'history'>('launcher');
   const [step, setStep] = useState(1);
+  const [maxStep, setMaxStep] = useState(1);
   const [s, setS] = useState<StudioState>(EMPTY);
   const patch = (p: Partial<StudioState>) => setS(prev => ({ ...prev, ...p }));
   const patchProduct = (p: Partial<ProductInfo>) => setS(prev => ({ ...prev, product: { ...prev.product, ...p } }));
@@ -105,14 +110,36 @@ export default function AICreativeStudio() {
   };
   const removeImage = (i: number) => setS(prev => { const images = (prev.images ?? []).filter((_, idx) => idx !== i); return { ...prev, images, imageBase64: images[0] }; });
 
-  // Persistencia: restaurar al volver + guardar (sin las fotos base64, pesadas)
+  // Persistencia: 1) cache en MEMORIA (full, sobrevive navegación) → prioridad.
+  //              2) localStorage liviano (solo URLs, no base64) → sobrevive recarga.
   useEffect(() => {
-    try { const raw = localStorage.getItem('cv_studio'); if (raw) { const d = JSON.parse(raw); if (d.s) setS(d.s); if (d.view) setView(d.view); if (d.step) setStep(d.step); } } catch { /* ignore */ }
+    if (studioCache.s) { // volvimos a la pantalla: restaurar TODO (incluye el video)
+      setS(studioCache.s); if (studioCache.view) setView(studioCache.view);
+      if (studioCache.step) setStep(studioCache.step); if (studioCache.maxStep) setMaxStep(studioCache.maxStep);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem('cv_studio');
+      if (raw) { const d = JSON.parse(raw); if (d.s) setS(d.s); if (d.view) setView(d.view); if (d.step) setStep(d.step); }
+    } catch { /* ignore */ }
   }, []);
   useEffect(() => {
-    // Guardamos solo lo liviano (sin data URLs de imágenes/variantes) para no romper la cuota.
-    try { localStorage.setItem('cv_studio', JSON.stringify({ s: { ...s, imageBase64: undefined, images: undefined, variants: [], selectedImage: undefined, videoUrl: undefined }, view, step })); } catch { /* quota */ }
-  }, [s, view, step]);
+    studioCache.s = s; studioCache.view = view; studioCache.step = step; studioCache.maxStep = maxStep;
+    // localStorage: guardamos las URLs livianas (video/variantes/imagen generadas) pero NO los data URLs pesados.
+    try {
+      const lightVariants = (s.variants ?? []).map(v => isUrl(v.url) ? v : { ...v, url: '' }).filter(v => v.url);
+      localStorage.setItem('cv_studio', JSON.stringify({
+        s: {
+          ...s,
+          imageBase64: isUrl(s.imageBase64) ? s.imageBase64 : undefined,
+          images: (s.images ?? []).filter(isUrl),
+          variants: lightVariants,
+          selectedImage: isUrl(s.selectedImage?.url) ? s.selectedImage : undefined,
+          videoUrl: isUrl(s.videoUrl) ? s.videoUrl : undefined,
+        }, view, step,
+      }));
+    } catch { /* quota */ }
+  }, [s, view, step, maxStep]);
 
   const [busy, setBusy] = useState<string | null>(null);       // clave de LOADING_MSGS
   const [err, setErr] = useState<string | null>(null);
@@ -131,7 +158,6 @@ export default function AICreativeStudio() {
     creativeApi.costs().then(r => { setCosts({ ...aiCreditsConfig, ...r.costs }); if (r.videoQualities?.length) setVideoQualities(r.videoQualities); setCredits(r.credits); }).catch(() => {});
   }, []);
 
-  const [maxStep, setMaxStep] = useState(1);
   const goto = (n: number) => { setErr(null); setStep(n); setMaxStep(m => Math.max(m, n)); };
   const reset = () => { setS(EMPTY); setStep(1); setMaxStep(1); setErr(null); };
 
