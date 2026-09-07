@@ -41,6 +41,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   }).catch(() => {});
   const uploadAvatar = async (f: File) => { const b64 = await toBase64(f); setUploadedAvatars(l => [b64, ...l]); setSelectedAvatar(b64); };
   const [imageBase64, setImageBase64] = useState<string | undefined>();
+  const [productImages, setProductImages] = useState<string[]>([]); // varias fotos → combos
   const [format] = useState<Fmt>('9:16');
   const [plan, setPlan] = useState<{ creator: string; scenes: UgcScene[] } | null>(null);
   const [runs, setRuns] = useState<Record<string, SceneRun>>({});
@@ -108,7 +109,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
       const scene = plan.scenes[i];
       setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
       try {
-        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
+        const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, referenceImages: productImages.length > 1 ? productImages : undefined, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
         setCredits(res.credits);
         if (res.videoUrl) anyVideo = true;
         setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
@@ -146,6 +147,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
       if (c.hd) setHd(c.hd);
       if (c.selectedAvatar) setSelectedAvatar(c.selectedAvatar);
       if (c.imageBase64) setImageBase64(c.imageBase64);
+      if (Array.isArray(c.productImages)) setProductImages(c.productImages);
       if (Array.isArray(c.messages) && c.messages.length > 1) setMessages(c.messages);
     }
     restored.current = true;
@@ -153,8 +155,8 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   const firstSave = useRef(true);
   useEffect(() => {
     if (firstSave.current) { firstSave.current = false; return; } // no pisar el cache en el montaje
-    ugcCache.s = { plan, runs, name, cmd, avatar, hd, selectedAvatar, imageBase64, messages };
-  }, [plan, runs, name, cmd, avatar, hd, selectedAvatar, imageBase64, messages]);
+    ugcCache.s = { plan, runs, name, cmd, avatar, hd, selectedAvatar, imageBase64, productImages, messages };
+  }, [plan, runs, name, cmd, avatar, hd, selectedAvatar, imageBase64, productImages, messages]);
 
   // Comandos recomendados según el producto (heurística, sin costo)
   const recCmds = (() => {
@@ -189,7 +191,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     setRuns(r => ({ ...r, [scene.key]: { ...r[scene.key], status: 'running' } }));
     pushMsg('copilot', `Generando la escena ${i + 1} (${scene.title})…`);
     try {
-      const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
+      const res = await creativeApi.ugcScene({ product: { name: name || 'Producto' }, scene, referenceImage: imageBase64 || avatarUrl, referenceImages: productImages.length > 1 ? productImages : undefined, format, brief: cmd, quality: hd ? 'premium' : undefined, avatarDesc: avatar, avatarImage: selectedAvatar, videoQuality: vq });
       setCredits(res.credits);
       setRuns(r => ({ ...r, [scene.key]: { status: 'done', imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined } }));
       pushMsg('copilot', `✓ Escena ${i + 1} lista.`);
@@ -310,15 +312,37 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
           <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 19 }}>🎬 Campaña UGC · Canvas</div>
           <div style={{ color: C.textMuted, fontSize: 12.5 }}>{plan ? <>Creador <b style={{ color: C.text }}>{plan.creator}</b> · {plan.scenes.length} escenas · <b style={{ color: C.accent }}>{totalCost} créditos</b> · {doneCount}/{plan.scenes.length} listas</> : 'El Copiloto arma los nodos por vos. Contale tu producto en el chat →'}</div>
         </div>
-        <div onClick={() => fileRef.current?.click()} title="Imagen del producto" style={{ width: 44, height: 44, borderRadius: 10, border: `1.5px dashed ${C.borderBright}`, background: C.surface, display: 'grid', placeItems: 'center', cursor: 'pointer', overflow: 'hidden', flexShrink: 0 }}>
+        <div onClick={() => fileRef.current?.click()} title="Imágenes del producto (podés subir varias para armar combos)" style={{ position: 'relative', width: 44, height: 44, borderRadius: 10, border: `1.5px dashed ${C.borderBright}`, background: C.surface, display: 'grid', placeItems: 'center', cursor: 'pointer', overflow: 'hidden', flexShrink: 0 }}>
           {imageBase64 ? <img src={imageBase64} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 18 }}>📷</span>}
+          {productImages.length > 1 && <span style={{ position: 'absolute', bottom: -2, right: -2, background: C.accent, color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 6, padding: '1px 5px' }}>{productImages.length}</span>}
         </div>
-        <input ref={fileRef} type="file" accept="image/*" hidden onChange={async e => e.target.files?.[0] && setImageBase64(await toBase64(e.target.files[0]))} />
+        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={async e => {
+          const files = Array.from(e.target.files ?? []);
+          if (!files.length) return;
+          const b64s = await Promise.all(files.map(toBase64));
+          setProductImages(prev => [...prev, ...b64s]);
+          setImageBase64(prev => prev ?? b64s[0]);
+          e.target.value = '';
+        }} />
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Producto…" style={{ width: 160, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 13, outline: 'none' }} />
         <input value={cmd} onChange={e => setCmd(e.target.value)} title="Estilo o comandos /x que se aplican a TODAS las escenas (ej: /ad /appetite /studio)" placeholder="Estilo / comandos: /ad /appetite /studio…" style={{ width: 230, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 13, outline: 'none' }} />
         <Btn onClick={() => startCampaign()} disabled={planning || (!name && !imageBase64)}>{planning ? 'Planeando…' : plan ? 'Replanificar' : '🤖 Planificar'}</Btn>
         {doneCount > 0 && <button onClick={saveProject} style={{ padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text }}>{saved ? '✓ Guardado' : '💾 Guardar'}</button>}
       </div>
+
+      {/* Combo: miniaturas de todas las imágenes del producto (subí varias para armar combos) */}
+      {productImages.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <span style={{ fontSize: 11.5, color: C.textMuted }}>🧩 Combo · {productImages.length} {productImages.length === 1 ? 'imagen' : 'imágenes'}:</span>
+          {productImages.map((img, i) => (
+            <div key={i} style={{ position: 'relative', width: 40, height: 40, borderRadius: 8, overflow: 'hidden', border: `1px solid ${i === 0 ? C.accent : C.border}` }} title={i === 0 ? 'Principal' : ''}>
+              <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <button onClick={() => setProductImages(prev => { const n = prev.filter((_, j) => j !== i); setImageBase64(n[0]); return n; })} style={{ position: 'absolute', top: -1, right: -1, width: 15, height: 15, lineHeight: '13px', textAlign: 'center', background: C.red, color: '#fff', border: 'none', borderRadius: '0 0 0 6px', fontSize: 10, cursor: 'pointer', padding: 0 }}>×</button>
+            </div>
+          ))}
+          <button onClick={() => fileRef.current?.click()} style={{ width: 40, height: 40, borderRadius: 8, border: `1.5px dashed ${C.borderBright}`, background: C.surface, color: C.textMuted, fontSize: 18, cursor: 'pointer' }} title="Agregar más imágenes al combo">+</button>
+        </div>
+      )}
 
       {/* Comandos recomendados según el producto (se aplican a todas las escenas) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 12 }}>
