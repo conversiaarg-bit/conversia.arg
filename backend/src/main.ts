@@ -42,9 +42,19 @@ async function bootstrap() {
   });
 
   // ── Security ──────────────────────────────────────────────────────────────
-  app.use(helmet());
+  // crossOriginResourcePolicy:false → permite cargar la media (/uploads) desde otro origen (Vercel).
+  app.use(helmet({ crossOriginResourcePolicy: false }));
+  // El frontend (Vercel) llama directo a este backend → CORS debe permitir su origen.
+  // Permitimos el FRONTEND_URL configurado, localhost (dev) y cualquier *.vercel.app (deploys/previews).
+  const allowedOrigins = [config.get<string>('frontendUrl', ''), 'http://localhost:3001', 'http://localhost:5173'].filter(Boolean);
   app.enableCors({
-    origin: config.get<string>('frontendUrl', 'http://localhost:3001'),
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // apps móviles / curl / server-to-server
+      let host = '';
+      try { host = new URL(origin).hostname; } catch { /* origen inválido */ }
+      const ok = allowedOrigins.includes(origin) || host.endsWith('.vercel.app');
+      return cb(null, ok);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });

@@ -1,6 +1,10 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1';
+// En producción llamamos DIRECTO al backend de Railway (no vía el proxy de Vercel),
+// porque Vercel corta las requests largas (~30s) y la generación de video tarda 60-180s.
+// En dev seguimos con el proxy relativo. Configurable con VITE_API_URL.
+const BASE_URL = import.meta.env.VITE_API_URL
+  ?? (import.meta.env.PROD ? 'https://conversiaarg-production.up.railway.app/api/v1' : '/api/v1');
 
 export const api = axios.create({ baseURL: BASE_URL, withCredentials: false });
 
