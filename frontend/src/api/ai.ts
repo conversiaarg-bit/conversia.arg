@@ -22,9 +22,6 @@ export const aiApi = {
   }) =>
     api.post<{ data: { prompt: string } }>('/generative/image-prompt', body, { timeout: 30_000 }),
 
-  generateVideo: (imageBase64: string, format: '9:16' | '4:5' | '1:1', movement: 'zoom_in' | 'zoom_out' | 'pan_right' | 'pan_left') =>
-    api.post<{ data: { videoBase64: string } }>('/generative/video', { imageBase64, format, movement }, { timeout: 170_000 }),
-
   // OpenAI gpt-image-1 — key stays server-side (no VITE_OPENAI_API_KEY in the browser)
   generateOpenAIImage: (body: {
     product: string;

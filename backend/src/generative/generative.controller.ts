@@ -77,20 +77,4 @@ export class GenerativeController {
     });
     return { prompt };
   }
-
-  @Post('video')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Animar imagen con efectos cinematográficos via ffmpeg' })
-  async generateVideo(@Body() body: {
-    imageBase64: string;
-    format?: '9:16' | '4:5' | '1:1';
-    movement?: 'zoom_in' | 'zoom_out' | 'pan_right' | 'pan_left';
-  }) {
-    const videoBase64 = await this.svc.generateVideo(
-      body.imageBase64,
-      body.format ?? '9:16',
-      body.movement ?? 'zoom_in',
-    );
-    return { videoBase64 };
-  }
 }
