@@ -11,7 +11,7 @@ import { VIDEO_QUALITY, videoQuality } from '../config/credits.config';
 // Directiva GLOBAL: siempre que hay una imagen de referencia, se usa el artículo ORIGINAL
 // sin modificarlo. La publicidad es de ESE producto, no de uno parecido.
 export const PRESERVE_PRODUCT =
-  'CRITICAL: Reproduce the EXACT product(s) from the reference image(s) — do NOT redraw, restyle, recolor, relabel, resize or alter the packaging, brand, logo, text, graphics, shapes or proportions in ANY way. Each product must look IDENTICAL to its reference photo (same real product). Only adapt the background, scene, lighting and composition around them. We are advertising THIS exact product, not a similar one.';
+  'CRITICAL — STRICT PRODUCT PRESERVATION (not a creative reinterpretation): reproduce the EXACT product(s) from the reference image(s) at pixel level, as if the product was directly pasted from the original photo. Do NOT redraw, restyle, recolor, relabel, resize or alter the packaging, brand, logo, text, graphics, shapes or proportions in ANY way — no duplicated or deformed products, no extra logos, no hallucinated text. The product is the dominant focus: sharp, clearly visible, undistorted, physically correct where hands touch it. Only the person, background, scene and lighting are generated around it. We are advertising THIS exact product, not a similar one.';
 
 // Directiva CINEMATOGRÁFICA para el video (Seedance): trata la imagen como footage real,
 // producto bloqueado, cámara DSLR, movimiento sutil físicamente correcto, sin artefactos.
