@@ -29,7 +29,7 @@ export const creativeApi = {
     D<{ imageUrl: string }>(api.post('/creative/remove-bg', { image }, { timeout: 90_000 })),
 
   analyzeUrl: (url: string) =>
-    D<{ name?: string; category?: string; description?: string; features?: string[]; colors?: string[]; price?: string; audience?: string; context?: string }>(api.post('/creative/analyze-url', { url }, { timeout: 45_000 })),
+    D<{ name?: string; category?: string; description?: string; features?: string[]; colors?: string[]; price?: string; audience?: string; context?: string; imageUrl?: string }>(api.post('/creative/analyze-url', { url }, { timeout: 60_000 })),
 
   campaignStrategy: (body: { name?: string; description?: string; objective?: string }) =>
     D<any>(api.post('/creative/campaign-strategy', body, { timeout: 60_000 })),

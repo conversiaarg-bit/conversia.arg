@@ -529,6 +529,8 @@ function StepProducto({ s, patch, patchProduct, onAnalyze, onNext, onAddImages, 
         features: d.features?.length ? d.features : p.features,
         colors: d.colors?.length ? d.colors : p.colors, audience: d.audience || p.audience,
       });
+      if (d.imageUrl) patch({ images: [d.imageUrl, ...imgs], imageBase64: d.imageUrl });
+      else if (!imgs.length) setUrlErr('Leí los datos pero no encontré una imagen en ese link. Subí la foto del producto.');
     } catch (e: any) {
       setUrlErr(e?.response?.data?.message || 'No pude leer el producto de ese link.');
     } finally { setUrlLoading(false); }

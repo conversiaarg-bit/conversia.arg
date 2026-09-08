@@ -524,24 +524,51 @@ Generá el paquete y devolvé SOLO este JSON (todo en español AR, salvo las sec
   // ── Analizar producto desde una URL (scrape + OpenAI) → autocompleta el producto ──
   async analyzeProductUrl(url: string): Promise<any> {
     if (!/^https?:\/\//i.test(url)) throw new BadRequestException('URL inválida (debe empezar con http).');
-    let text = '';
+    const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36', 'Accept-Language': 'es-AR,es;q=0.9' };
+    let raw: any;
     try {
-      const r = await axios.get(url, {
-        timeout: 20_000, maxContentLength: 6_000_000, maxRedirects: 5,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36', 'Accept-Language': 'es-AR,es;q=0.9' },
-      });
-      text = String(r.data)
-        .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
-        .replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 7000);
+      raw = await axios.get(url, { timeout: 20_000, maxContentLength: 12_000_000, maxRedirects: 5, responseType: 'arraybuffer', headers });
     } catch {
-      throw new BadRequestException('No pude leer la página del producto. Revisá el link.');
+      throw new BadRequestException('No pude leer el link. Revisá que sea válido y público.');
     }
-    if (!text) throw new BadRequestException('La página no tiene texto legible.');
-    return this.openai.chatJSON<any>(
-      'Sos un extractor de datos de productos de e-commerce. Devolvés SOLO JSON con los datos observables de la página. No inventes.',
-      `Contenido de la página del producto:\n${text}\n\nExtraé y devolvé JSON: { "name": "", "category": "", "description": "breve, vendedor", "features": ["hasta 4 beneficios"], "colors": [], "price": "solo el número/moneda si aparece", "audience": "", "context": "contexto de uso" }. Todo en español. Si un dato no está, dejalo vacío.`,
-      700,
-    );
+    const ct = String(raw.headers['content-type'] || '').toLowerCase();
+    const imgVisionPrompt = 'Devolvé JSON: { "name":"", "category":"", "description":"breve, vendedor", "features":["hasta 4 beneficios"], "colors":[], "audience":"", "context":"" }. Describí SOLO lo que ves del producto, en español. Si algo no se ve, vacío.';
+
+    // CASO 1: el link ES una imagen → la usamos como foto del producto + la analizamos con visión
+    if (ct.startsWith('image/')) {
+      const dataUrl = `data:${ct};base64,${Buffer.from(raw.data as ArrayBuffer).toString('base64')}`;
+      const imageUrl = await this.persist(dataUrl, 'image');
+      let data: any = {};
+      try { data = await this.openai.chatVisionJSON('Sos un analista de productos e-commerce. Solo JSON.', imgVisionPrompt, dataUrl, 500); } catch { /* seguimos sin datos */ }
+      return { ...data, imageUrl };
+    }
+
+    // CASO 2: es una página HTML → extraemos texto + imagen principal (og:image)
+    const html = Buffer.from(raw.data as ArrayBuffer).toString('utf8');
+    const og = html.match(/<meta[^>]+(?:property|name)=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']og:image["']/i)?.[1];
+    let imageUrl: string | undefined;
+    if (og) {
+      try {
+        const abs = og.startsWith('http') ? og : new URL(og, url).href;
+        const im = await axios.get(abs, { timeout: 20_000, maxContentLength: 12_000_000, responseType: 'arraybuffer', headers });
+        const ict = String(im.headers['content-type'] || 'image/jpeg');
+        imageUrl = await this.persist(`data:${ict};base64,${Buffer.from(im.data as ArrayBuffer).toString('base64')}`, 'image');
+      } catch { /* opcional */ }
+    }
+    const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 7000);
+    let data: any = {};
+    if (text) {
+      try {
+        data = await this.openai.chatJSON<any>(
+          'Sos un extractor de datos de productos de e-commerce. Solo JSON. No inventes.',
+          `Contenido de la página:\n${text}\n\nJSON: { "name":"", "category":"", "description":"breve, vendedor", "features":["hasta 4 beneficios"], "colors":[], "price":"número/moneda si aparece", "audience":"", "context":"" }. Todo en español, vacío si no está.`,
+          700,
+        );
+      } catch { /* sin datos */ }
+    }
+    return { ...data, imageUrl };
   }
 
   // ── Estrategia de campaña (OpenAI) — para el paso "IA analiza" de Nueva Campaña ──
