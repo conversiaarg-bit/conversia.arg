@@ -320,9 +320,11 @@ export default function AICreativeStudio() {
   });
 
   const genUGC = (duration: '5' | '10' = '10') => run('ugc', async () => {
-    const pick = await creativeApi.ugcAuto({ product: s.product });
-    const r = await creativeApi.ugc({ product: s.product, ...pick, duration, referenceImage: s.imageBase64, format: s.format, videoQuality: vq });
-    patch({ videoUrl: r.videoUrl, selectedImage: s.selectedImage ?? { key: 'ugc', label: 'UGC', description: r.creator?.name ?? '', prompt: '', url: r.imageUrl, model: '' } });
+    // Pipeline único: usa TODOS los productos (combo), guion en español rioplatense y
+    // locución real (voz TTS mezclada). La persona habla el guion, no ruido en inglés.
+    const srcs: string[] = s.images?.length ? s.images : (s.imageBase64 ? [s.imageBase64] : []);
+    const r = await creativeApi.ugcOneShot({ product: s.product, referenceImages: srcs, format: s.format, videoQuality: vq, duration });
+    patch({ videoUrl: r.videoUrl ?? undefined, selectedImage: s.selectedImage ?? { key: 'ugc', label: 'UGC', description: '', prompt: '', url: r.imageUrl, model: '' } });
     setCredits(r.credits);
   });
 

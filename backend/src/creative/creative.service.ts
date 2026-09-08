@@ -385,9 +385,13 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     // 2) PROMPT MASTER (OpenAI) → prompt de imagen + prompt de video (premium, en inglés)
     const { fragments, rest } = expandCommands(input.brief);
     const cmdLine = [...fragments, rest].filter(Boolean).join('; ');
+    // Combo: si hay VARIAS fotos, es un pack → TODOS los productos deben aparecer juntos.
+    const comboLine = productPics.length > 1
+      ? `\nThis ad features a COMBO/PACK of ${productPics.length} DIFFERENT products (see the ${productPics.length} reference images). ALL of them MUST appear together in the scene and in the product-only B-roll — never just one. The spoken script must mention it is a combo/pack of ${productPics.length} products.`
+      : '';
     const plan = await this.openai.chatJSON<{ imagePrompt: string; videoPrompt: string; script: string }>(
       'You are a prompt engineer for META ADS (Instagram/Facebook Reels & Stories) in iPhone-SELFIE UGC style (Creatify style). Goal: a scroll-stopping vertical 9:16 ad — a strong hook in the first second, the person talking to camera, and a clear CTA. The look is RAW, handheld, authentic phone footage — NOT commercial, NOT DSLR, NOT cinematic, NO bokeh. The product is a LOCKED asset: keep its packaging, colors, logos, materials and text EXACT, no redesign or relabeling; if it is a COMBO show ALL its products. You invent only the person, their outfit and their everyday room. Output ONLY valid JSON.',
-      `Product: ${JSON.stringify(input.product)}. Character base: ${characterDesc}.${productTruth}${cmdLine ? '\nUser directives: ' + cmdLine + '.' : ''}
+      `Product: ${JSON.stringify(input.product)}. Character base: ${characterDesc}.${productTruth}${comboLine}${cmdLine ? '\nUser directives: ' + cmdLine + '.' : ''}
 Fill this TEMPLATE for THIS product and return JSON with keys "imagePrompt", "videoPrompt", "script":
 
 "imagePrompt" (ENGLISH, single flowing line using → arrows, MUST follow this exact structure):
