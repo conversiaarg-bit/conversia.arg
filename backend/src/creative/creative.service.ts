@@ -31,7 +31,8 @@ import axios from 'axios';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import sharp from 'sharp';
+// sharp se carga LAZY dentro de buildProductOverlayPNG (require), no a nivel de módulo:
+// si el binario nativo fallara en el server, NO tira abajo el arranque del backend.
 
 // ── Catálogos (concepto → guía para GPT) ─────────────────────────────────────
 export const OBJECTIVES: Record<string, string> = {
@@ -470,6 +471,8 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
   // PNG transparente 1080×1920 con una banda inferior de TARJETAS con las fotos REALES del producto.
   // Va superpuesto al video → los productos quedan pixel-exactos (no los redibuja ni deforma la IA).
   private async buildProductOverlayPNG(pics: string[], W = 1080, H = 1920): Promise<Buffer> {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const sharp = require('sharp') as typeof import('sharp');
     const items = pics.slice(0, 10);
     const n = items.length;
     const rows = Math.ceil(n / 5);
@@ -498,7 +501,7 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
     const svg = Buffer.from(
       `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b0d12" stop-opacity="0"/><stop offset="0.12" stop-color="#0b0d12" stop-opacity="0.82"/><stop offset="1" stop-color="#0b0d12" stop-opacity="0.97"/></linearGradient></defs><rect x="0" y="${bandY}" width="${W}" height="${bandH}" fill="url(#g)"/><rect x="0" y="${bandY}" width="${W}" height="5" fill="#ffa23d"/>${cards}</svg>`,
     );
-    const layers: sharp.OverlayOptions[] = [{ input: svg, top: 0, left: 0 }];
+    const layers: import('sharp').OverlayOptions[] = [{ input: svg, top: 0, left: 0 }];
     for (let i = 0; i < n; i++) {
       const { x: rx, y: ry } = rect(i);
       const cx = rx + inset, cy = ry + inset, w = cellW - inset * 2, h = cellH - inset * 2, ip = Math.round(w * 0.08);
