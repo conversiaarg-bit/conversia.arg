@@ -246,7 +246,9 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     pushMsg('copilot', '✂️ Recortando cada producto y armando el combo (fondo blanco, productos exactos)…');
     try {
       const clean = await Promise.all(productImages.map(img => creativeApi.removeBg(img).then(r => r.imageUrl).catch(() => img)));
-      const loadImg = (src: string) => new Promise<HTMLImageElement>((res, rej) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = rej; im.src = src; });
+      // fetch→dataURL para que el canvas no quede tainted al exportar
+      const toData = async (src: string) => { if (src.startsWith('data:')) return src; try { const rb = await fetch(src); const bl = await rb.blob(); return await new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(bl); }); } catch { return src; } };
+      const loadImg = async (src: string) => { const d = await toData(src); return new Promise<HTMLImageElement>((res, rej) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = rej; im.src = d; }); };
       const imgs = await Promise.all(clean.map(loadImg));
       const W = 1080, H = 1350;
       const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;

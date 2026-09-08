@@ -659,7 +659,12 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
     if (!productImg) return;
     setTplLoading(true);
     try {
-      const img: HTMLImageElement = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = productImg; });
+      // Cargar la imagen como dataURL (fetch→blob) para que el canvas NUNCA quede tainted al exportar.
+      let src = productImg;
+      if (!src.startsWith('data:')) {
+        try { const rb = await fetch(productImg); const bl = await rb.blob(); src = await new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(bl); }); } catch { /* usamos la url directa */ }
+      }
+      const img: HTMLImageElement = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = src; });
       const [W, H] = s.format === '1:1' ? [1080, 1080] : s.format === '4:5' ? [1080, 1350] : [1080, 1920];
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const ctx = cv.getContext('2d'); if (!ctx) throw new Error('canvas');
