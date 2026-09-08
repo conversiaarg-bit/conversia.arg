@@ -31,6 +31,7 @@ import axios from 'axios';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import sharp from 'sharp';
 
 // ── Catálogos (concepto → guía para GPT) ─────────────────────────────────────
 export const OBJECTIVES: Record<string, string> = {
@@ -380,6 +381,7 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     product: ProductInfo; referenceImages?: string[]; referenceImage?: string;
     avatarImage?: string; avatarDesc?: string; brief?: string; scriptOverride?: string;
     quality?: 'standard' | 'premium'; videoQuality?: string; format?: Fmt; duration?: '5' | '10';
+    exactProducts?: boolean;
   }) {
     const productPics = (input.referenceImages?.length ? input.referenceImages : [input.referenceImage]).filter(Boolean) as string[];
     const hasRef = productPics.length > 0;
@@ -411,38 +413,126 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
       900,
     );
 
-    // 3) GENERACIÓN DE PERSONAJE (OpenAI imagen) con el producto EXACTO
-    const refs = [input.avatarImage, ...productPics].filter(Boolean) as string[];
+    // 3) GENERACIÓN DE PERSONAJE (OpenAI imagen)
+    // Modo PRODUCTOS EXACTOS: gpt-image-1 SIEMPRE corrompe el logo/texto del producto
+    // ("Good Show" → "Bhcu Show"). Solución: la IA NO dibuja el producto — genera la persona
+    // con las MANOS LIBRES — y después superponemos las fotos REALES (pixel-exactas) sobre el video.
+    const exact = input.exactProducts === true && hasRef;
+    const refs = exact ? ([input.avatarImage].filter(Boolean) as string[]) : ([input.avatarImage, ...productPics].filter(Boolean) as string[]);
+    const imagePromptFinal = exact
+      ? `handheld iPhone front-camera selfie, 9:16, wide medium selfie from head to waist, ${characterDesc}, bright friendly expression, mid-sentence talking directly to the lens, natural hand gestures with EMPTY hands (NOT holding anything), everyday room visible behind, KEEP THE LOWER THIRD OF THE FRAME SIMPLE AND UNCLUTTERED; soft natural daylight, raw iPhone texture, realistic skin and grain, no bokeh; NEGATIVE: any product, packaging, bag, box or held object, text overlay, studio look, plastic skin, beauty filter, third-person photo.`
+      : `${plan.imagePrompt}${hasRef ? ' ' + PRESERVE_PRODUCT : ''}`;
     const img = await this.imageProvider.generate({
-      prompt: `${plan.imagePrompt}${hasRef ? ' ' + PRESERVE_PRODUCT : ''}`,
+      prompt: imagePromptFinal,
       format: input.format ?? '9:16', quality: input.quality ?? 'standard',
       referenceImage: refs[0], referenceImages: refs.length > 1 ? refs : undefined,
-      preserveExact: hasRef,
+      preserveExact: exact ? false : hasRef,
     });
     const imageUrl = await this.persist(img.dataUrl, 'image');
 
     // 4) GENERACIÓN DE VIDEO (Seedance) con el prompt de video
     if (!this.videoProvider.enabled) {
-      return { productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: plan.script, imageUrl, videoUrl: null, videoPending: true };
+      return { productData, imagePrompt: imagePromptFinal, videoPrompt: plan.videoPrompt, script: plan.script, imageUrl, videoUrl: null, videoPending: true };
     }
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
     // Guion final: el elegido por el usuario (variación del paquete) o el que armó el Prompt Master.
     const finalScript = input.scriptOverride?.trim() || plan.script;
     const spoken = finalScript ? ` The person says in Spanish: "${finalScript}".` : '';
-    // Seedance SIEMPRE sin su audio (ruido ambiente). Si la calidad pide audio, le
-    // ponemos LOCUCIÓN (TTS del guion) y la mezclamos → la persona "dice" el guion.
+    const videoPromptFinal = exact
+      ? `9:16 iPhone selfie talking-head of this SAME person speaking to the lens, natural hand gestures, empty hands, subtle handheld motion, daytime white balance, sharp readable background.${spoken}`
+      : `${plan.videoPrompt || 'natural UGC selfie, person talking to camera holding the product'}${spoken}`;
+    // Seedance SIEMPRE sin su audio (ruido ambiente).
     const vid = await this.videoProvider.generate({
       image: img.dataUrl,
-      prompt: `${plan.videoPrompt || 'natural UGC selfie, person talking to camera holding the product'}${spoken} ${UGC_VIDEO_DIRECTIVE}`,
+      prompt: `${videoPromptFinal} ${UGC_VIDEO_DIRECTIVE}`,
       duration: secs, resolution: q.resolution, audio: false,
     });
-    const videoUrl = q.audio
-      ? await this.muxVoiceover(vid.url, finalScript, await this.detectVoiceKey(img.dataUrl, input.avatarDesc))
-      : await this.persist(vid.url, 'video');
+    // Finalizar: superponer los productos REALES sobre CADA frame (pixel-exactos, ffmpeg — Seedance
+    // no los puede deformar porque van ENCIMA) + mezclar la locución si la calidad la incluye.
+    const overlayPng = exact ? await this.buildProductOverlayPNG(productPics).catch(() => undefined) : undefined;
+    const videoUrl = await this.finishVideo(vid.url, {
+      overlayPng,
+      script: q.audio ? finalScript : undefined,
+      voiceKey: q.audio ? await this.detectVoiceKey(img.dataUrl, input.avatarDesc) : undefined,
+    });
     return {
-      productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: finalScript,
+      productData, imagePrompt: imagePromptFinal, videoPrompt: videoPromptFinal, script: finalScript,
       imageUrl, videoUrl, model: vid.model, seconds: vid.seconds,
     };
+  }
+
+  // Descarga (o decodifica) una imagen a Buffer.
+  private async toBuf(src: string): Promise<Buffer> {
+    if (/^https?:\/\//.test(src)) { const r = await axios.get(src, { responseType: 'arraybuffer', timeout: 30_000 }); return Buffer.from(r.data as ArrayBuffer); }
+    return Buffer.from(src.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+  }
+
+  // PNG transparente 1080×1920 con una banda inferior de TARJETAS con las fotos REALES del producto.
+  // Va superpuesto al video → los productos quedan pixel-exactos (no los redibuja ni deforma la IA).
+  private async buildProductOverlayPNG(pics: string[], W = 1080, H = 1920): Promise<Buffer> {
+    const items = pics.slice(0, 10);
+    const n = items.length;
+    const cols = n <= 4 ? n : 5;
+    const rows = Math.ceil(n / cols);
+    const bandH = Math.round(H * (rows > 1 ? 0.40 : 0.26));
+    const bandY = H - bandH;
+    const pad = Math.round(W * 0.018);
+    const cellW = Math.floor((W - pad) / cols) - pad;
+    const cellH = Math.floor((bandH - pad) / rows) - pad;
+    const inset = Math.round(cellW * 0.05);
+    let cards = '';
+    for (let i = 0; i < n; i++) {
+      const col = i % cols, row = Math.floor(i / cols);
+      const x = pad + col * (cellW + pad) + inset, y = bandY + pad + row * (cellH + pad) + inset;
+      const w = cellW - inset * 2, h = cellH - inset * 2;
+      cards += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.round(w * 0.08)}" fill="#ffffff"/>`;
+    }
+    const svg = Buffer.from(
+      `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b0d12" stop-opacity="0"/><stop offset="0.12" stop-color="#0b0d12" stop-opacity="0.82"/><stop offset="1" stop-color="#0b0d12" stop-opacity="0.97"/></linearGradient></defs><rect x="0" y="${bandY}" width="${W}" height="${bandH}" fill="url(#g)"/><rect x="0" y="${bandY}" width="${W}" height="5" fill="#ffa23d"/>${cards}</svg>`,
+    );
+    const layers: sharp.OverlayOptions[] = [{ input: svg, top: 0, left: 0 }];
+    for (let i = 0; i < n; i++) {
+      const col = i % cols, row = Math.floor(i / cols);
+      const cx = pad + col * (cellW + pad) + inset, cy = bandY + pad + row * (cellH + pad) + inset;
+      const w = cellW - inset * 2, h = cellH - inset * 2, ip = Math.round(w * 0.08);
+      const cell = await sharp(await this.toBuf(items[i])).resize(w - ip * 2, h - ip * 2, { fit: 'inside' }).png().toBuffer();
+      const cm = await sharp(cell).metadata();
+      const left = cx + ip + Math.round(((w - ip * 2) - (cm.width ?? 0)) / 2);
+      const top = cy + ip + Math.round(((h - ip * 2) - (cm.height ?? 0)) / 2);
+      layers.push({ input: cell, top, left });
+    }
+    return sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite(layers).png().toBuffer();
+  }
+
+  // Finaliza el video: (opcional) superpone un PNG en TODOS los frames y/o mezcla locución TTS.
+  // Un solo pase de ffmpeg. Si algo falla, devuelve el video base (no se pierde la generación).
+  private async finishVideo(videoUrl: string, opts: { overlayPng?: Buffer; script?: string; voiceKey?: string }): Promise<string> {
+    const { overlayPng, script, voiceKey = 'fem_natural' } = opts;
+    if (!overlayPng && !script?.trim()) return this.persist(videoUrl, 'video');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fin_'));
+    try {
+      const dv = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 120_000 });
+      const vf = path.join(tmp, 'v.mp4'); fs.writeFileSync(vf, Buffer.from(dv.data as ArrayBuffer));
+      let cmd = ffmpeg().input(vf); let idx = 0, pngIdx = -1, audIdx = -1;
+      if (overlayPng) { const pf = path.join(tmp, 'ov.png'); fs.writeFileSync(pf, overlayPng); cmd = cmd.input(pf); pngIdx = ++idx; }
+      if (script?.trim()) {
+        const sp = await this.openai.speech(script, voiceKey);
+        const af = path.join(tmp, 'a.mp3'); fs.writeFileSync(af, Buffer.from(sp.replace(/^data:audio\/\w+;base64,/, ''), 'base64'));
+        cmd = cmd.input(af); audIdx = ++idx;
+      }
+      const out = path.join(tmp, 'out.mp4'); const outOpts: string[] = [];
+      if (pngIdx >= 0) {
+        cmd = cmd.complexFilter([`[${pngIdx}:v][0:v]scale2ref=w=iw:h=ih[ov][bv]`, `[bv][ov]overlay=0:0[v]`]);
+        outOpts.push('-map', '[v]', '-c:v', 'libx264', '-pix_fmt', 'yuv420p');
+      } else { outOpts.push('-map', '0:v:0', '-c:v', 'copy'); }
+      if (audIdx >= 0) outOpts.push('-map', `${audIdx}:a:0`, '-c:a', 'aac', '-shortest');
+      outOpts.push('-movflags', '+faststart');
+      await new Promise<void>((res, rej) => { cmd.outputOptions(outOpts).output(out).on('end', () => res()).on('error', e => rej(e)).run(); });
+      return await this.persist(`data:video/mp4;base64,${fs.readFileSync(out).toString('base64')}`, 'video');
+    } catch (e: any) {
+      this.logger.warn(`finishVideo falló (${e.message}) — devuelvo video base`);
+      return this.persist(videoUrl, 'video');
+    } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ } }
   }
 
   // Voz según el género de la persona (del avatarDesc). Default: femenina natural.

@@ -343,7 +343,7 @@ export default function AICreativeStudio() {
     // locución real (voz TTS mezclada). La persona habla el guion, no ruido en inglés.
     const raw: string[] = s.images?.length ? s.images : (s.imageBase64 ? [s.imageBase64] : []);
     const srcs = await Promise.all(raw.map(i => shrink(i))); // comprimir → POST liviano (evita "Falló")
-    const r = await creativeApi.ugcOneShot({ product: s.product, referenceImages: srcs, format: s.format, videoQuality: vq, duration });
+    const r = await creativeApi.ugcOneShot({ product: s.product, referenceImages: srcs, format: s.format, videoQuality: vq, duration, exactProducts: true });
     patch({ videoUrl: r.videoUrl ?? undefined, selectedImage: s.selectedImage ?? { key: 'ugc', label: 'UGC', description: '', prompt: '', url: r.imageUrl, model: '' } });
     setCredits(r.credits);
   });

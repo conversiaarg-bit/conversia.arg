@@ -47,6 +47,9 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   const [cmd, setCmd] = useState('');   // estilo/comandos "/x" aplicados a todas las escenas
   const [avatar, setAvatar] = useState('');  // descripción del avatar/persona
   const [hd, setHd] = useState(false);  // Producto exacto (alta fidelidad, cuesta más)
+  // Productos 100% reales: la IA hace SOLO la persona (manos libres) y superponemos tus
+  // fotos reales sobre el video → el logo/texto queda idéntico (la IA no lo redibuja).
+  const [exactProd, setExactProd] = useState(true);
   // Galería de Plantillas / Avatares
   const [selectedAvatar, setSelectedAvatar] = useState<string | undefined>();
   const [avatarLib, setAvatarLib] = useState<string[]>([]);
@@ -143,7 +146,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     setRunning(true); setErr(null); setPipe({});
     pushMsg('copilot', 'Generando: OpenAI arma el prompt de imagen y de video, crea la imagen del personaje con el producto, y Seedance hace el video…');
     try {
-      const res = await creativeApi.ugcOneShot({ product: { name: name || 'Producto' }, referenceImage: productRef, referenceImages: refsArr, avatarImage: selectedAvatar, avatarDesc: avatar, brief: cmd, scriptOverride: adScript || undefined, quality: hd ? 'premium' : undefined, videoQuality: vq, format, duration: videoDur });
+      const res = await creativeApi.ugcOneShot({ product: { name: name || 'Producto' }, referenceImage: productRef, referenceImages: refsArr, avatarImage: selectedAvatar, avatarDesc: avatar, brief: cmd, scriptOverride: adScript || undefined, quality: hd ? 'premium' : undefined, videoQuality: vq, format, duration: videoDur, exactProducts: exactProd });
       setCredits(res.credits);
       setPipe({ productData: (res as any).productData, imagePrompt: res.imagePrompt, videoPrompt: res.videoPrompt, script: res.script, imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined });
       pushMsg('copilot', res.videoUrl ? '🎥 Video listo — descargalo desde el nodo Video.' : '🖼️ Imagen lista (el video queda pendiente hasta activar Seedance).');
@@ -469,6 +472,11 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
           <span style={{ fontSize: 12, color: C.textMuted }}>Producto exacto:</span>
           <button onClick={() => setHd(false)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: !hd ? C.accentDim : 'transparent', color: !hd ? C.accent : C.textMuted }}>Económico</button>
           <button onClick={() => setHd(true)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: hd ? C.accentDim : 'transparent', color: hd ? C.accent : C.textMuted }}>HD · exacto</button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.surface, border: `1px solid ${exactProd ? C.accent : C.border}`, borderRadius: 10, padding: '6px 10px' }} title="La IA hace solo la persona; tus fotos reales se superponen al video → logo y texto idénticos, sin inventar">
+          <span style={{ fontSize: 12, color: C.textMuted }}>Productos 100% reales:</span>
+          <button onClick={() => setExactProd(true)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: exactProd ? C.accentDim : 'transparent', color: exactProd ? C.accent : C.textMuted }}>Sí (real)</button>
+          <button onClick={() => setExactProd(false)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: !exactProd ? C.accentDim : 'transparent', color: !exactProd ? C.accent : C.textMuted }}>En la mano (IA)</button>
         </div>
         {setVq && vqOptions.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '6px 10px' }}>
