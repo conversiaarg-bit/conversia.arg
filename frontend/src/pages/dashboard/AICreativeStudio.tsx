@@ -649,6 +649,62 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
   const has = s.variants.length > 0;
   const [hd, setHd] = useState(false);
   const q = hd ? 'premium' : undefined;
+  const [tplLoading, setTplLoading] = useState(false);
+  const p = s.product as ProductInfo;
+  const productImg: string | undefined = s.imageBase64 || s.images?.[0];
+
+  // Plantilla de OFERTA por CANVAS: producto REAL (pixel-perfect) + texto/precio con fuentes
+  // reales (nítido, sin gibberish). NO usa IA para el texto → el producto queda idéntico.
+  const buildOfferTemplate = async () => {
+    if (!productImg) return;
+    setTplLoading(true);
+    try {
+      const img: HTMLImageElement = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = productImg; });
+      const [W, H] = s.format === '1:1' ? [1080, 1080] : s.format === '4:5' ? [1080, 1350] : [1080, 1920];
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d'); if (!ctx) throw new Error('canvas');
+      // Fondo: gradiente suave claro
+      const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#f3f4f6'); bg.addColorStop(1, '#e5e7eb');
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+      const cx = W / 2;
+      const rr = (x: number, y: number, w: number, h: number, r: number) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
+      ctx.textAlign = 'center';
+      let y = H * 0.06;
+      // Ribbon de oferta
+      const ribbon = (p.discount ? `¡${p.discount} OFF!` : '¡OFERTA ESPECIAL!').toUpperCase();
+      ctx.font = `800 ${Math.round(W * 0.055)}px Arial`;
+      const rw = ctx.measureText(ribbon).width + W * 0.09;
+      ctx.fillStyle = '#dc2626'; rr(cx - rw / 2, y, rw, W * 0.1, 18); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.fillText(ribbon, cx, y + W * 0.05);
+      y += W * 0.1 + H * 0.02;
+      // Precio
+      if (p.price) {
+        if (p.oldPrice) { ctx.font = `700 ${Math.round(W * 0.05)}px Arial`; ctx.fillStyle = '#9ca3af'; const op = `$${String(p.oldPrice).replace(/\$/g, '')}`; ctx.fillText(op, cx, y + W * 0.03); const ow = ctx.measureText(op).width; ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx - ow / 2, y + W * 0.03); ctx.lineTo(cx + ow / 2, y + W * 0.03); ctx.stroke(); y += W * 0.06; }
+        ctx.font = `900 ${Math.round(W * 0.13)}px Arial`; ctx.fillStyle = '#111827'; ctx.fillText(`$${String(p.price).replace(/\$/g, '')}`, cx, y + W * 0.07);
+        y += W * 0.14 + H * 0.01;
+      }
+      // Producto (real, contain, con sombra)
+      const areaTop = y, areaH = H * 0.9 - y - H * 0.12;
+      const scale = Math.min((W * 0.82) / img.width, areaH / img.height);
+      const dw = img.width * scale, dh = img.height * scale;
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 20;
+      ctx.drawImage(img, cx - dw / 2, areaTop + (areaH - dh) / 2, dw, dh); ctx.restore();
+      // Beneficios (features) como líneas con check
+      const feats = (p.features ?? []).slice(0, 3);
+      let fy = areaTop + areaH + H * 0.015;
+      ctx.font = `600 ${Math.round(W * 0.032)}px Arial`; ctx.fillStyle = '#374151'; ctx.textBaseline = 'middle';
+      feats.forEach(f => { ctx.fillText(`✓ ${f}`, cx, fy); fy += W * 0.05; });
+      // CTA
+      const cta = (p.cta || '¡Comprá ahora!').toUpperCase();
+      ctx.font = `800 ${Math.round(W * 0.045)}px Arial`;
+      const cw = ctx.measureText(cta).width + W * 0.12; const ch = W * 0.11; const cyb = H * 0.9;
+      ctx.fillStyle = '#16a34a'; rr(cx - cw / 2, cyb, cw, ch, 20); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillText(cta, cx, cyb + ch / 2);
+      const url = cv.toDataURL('image/png');
+      onPick({ key: 'template', label: 'Plantilla de oferta', description: 'Producto real + texto perfecto (sin IA)', prompt: '', url, model: 'template' });
+    } catch { /* reintentar */ }
+    finally { setTplLoading(false); }
+  };
   return (
     <StepShell title="Generá la imagen" subtitle={s.strategy?.concept ? `Concepto: ${s.strategy.concept}` : 'La IA crea 3 variantes; elegí la que más te guste.'}>
       {/* Brief: qué imagen querés — texto libre o comandos "/" */}
@@ -694,6 +750,9 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
           <span style={{ fontSize: 12.5, color: C.textMuted, flex: 1, minWidth: 160 }}>¿Ya tenés tu imagen lista? Usala tal cual, sin generar nada.</span>
           <Btn small ghost={s.selectedImage?.model !== 'original'} onClick={() => onPick({ key: 'own', label: 'Mi imagen', description: 'Tu imagen, sin generar (0 créditos)', prompt: '', url: s.imageBase64 || s.images[0], model: 'original' })}>
             {s.selectedImage?.model === 'original' ? '✓ Usando mi imagen' : '🖼️ Usar mi imagen (0 créditos)'}
+          </Btn>
+          <Btn small ghost={s.selectedImage?.model !== 'template'} onClick={buildOfferTemplate} disabled={tplLoading} title="Arma un ad de oferta con tu producto REAL (pixel-perfect) y texto/precio nítidos, sin IA">
+            {tplLoading ? 'Armando…' : s.selectedImage?.model === 'template' ? '✓ Plantilla lista' : '🏷️ Plantilla de oferta (0 créditos)'}
           </Btn>
         </div>
       )}
