@@ -67,8 +67,11 @@ export class OpenAIImageProvider implements ImageProvider {
         if (out) return { dataUrl: `data:image/png;base64,${out}`, model };
       } catch (e: any) {
         editsErr = this.oaiErr(e);
-        this.logger.warn(`edits falló: ${editsErr} — fallback a generación`);
+        this.logger.warn(`edits falló: ${editsErr}`);
       }
+      // Con referencias NO caemos a generación por texto: inventaría un producto
+      // que no es el del cliente (peor que un error). Propagamos el motivo real.
+      throw new Error(`gpt-image-1 edits: ${editsErr || 'no devolvió imagen'}`);
     }
 
     try {

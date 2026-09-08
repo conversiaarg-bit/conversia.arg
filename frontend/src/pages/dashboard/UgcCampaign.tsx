@@ -111,9 +111,12 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   const vqOpt = (vqOptions ?? []).find((o: any) => o.key === vq) ?? (vqOptions ?? [])[0];
   const oneShotCost = (videoDur === '10' ? vqOpt?.credits10 : vqOpt?.credits5) ?? (videoDur === '10' ? 6 : 3);
   const runOneShot = async () => {
-    const productRef = comboImage || imageBase64;
+    // Para generar la persona con el producto EXACTO, gpt-image-1 necesita las fotos
+    // INDIVIDUALES (no un collage): con un collage no puede aislar un producto y termina
+    // inventando uno. El combo recortado se muestra igual (el prompt pide todos los productos).
+    const productRef = productImages[0] || imageBase64 || comboImage;
     if (!productRef && productImages.length === 0) { pushMsg('copilot', 'Primero subí al menos una foto del producto (📎 acá o 📷 arriba).'); return; }
-    const refsArr = comboImage ? undefined : (productImages.length > 1 ? productImages : undefined);
+    const refsArr = productImages.length > 1 ? productImages : undefined;
     if (!window.confirm(`Generar el video usará ${oneShotCost} créditos (imagen con OpenAI + 1 video con Seedance). Tenés ${credits}. ¿Continuar?`)) return;
     setRunning(true); setErr(null); setPipe({});
     pushMsg('copilot', 'Generando: OpenAI arma el prompt de imagen y de video, crea la imagen del personaje con el producto, y Seedance hace el video…');
