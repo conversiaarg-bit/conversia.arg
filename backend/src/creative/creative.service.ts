@@ -499,6 +499,29 @@ Generá el paquete y devolvé SOLO este JSON (todo en español AR, salvo las sec
     return { audioUrl };
   }
 
+  // ── Analizar producto desde una URL (scrape + OpenAI) → autocompleta el producto ──
+  async analyzeProductUrl(url: string): Promise<any> {
+    if (!/^https?:\/\//i.test(url)) throw new BadRequestException('URL inválida (debe empezar con http).');
+    let text = '';
+    try {
+      const r = await axios.get(url, {
+        timeout: 20_000, maxContentLength: 6_000_000, maxRedirects: 5,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36', 'Accept-Language': 'es-AR,es;q=0.9' },
+      });
+      text = String(r.data)
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 7000);
+    } catch {
+      throw new BadRequestException('No pude leer la página del producto. Revisá el link.');
+    }
+    if (!text) throw new BadRequestException('La página no tiene texto legible.');
+    return this.openai.chatJSON<any>(
+      'Sos un extractor de datos de productos de e-commerce. Devolvés SOLO JSON con los datos observables de la página. No inventes.',
+      `Contenido de la página del producto:\n${text}\n\nExtraé y devolvé JSON: { "name": "", "category": "", "description": "breve, vendedor", "features": ["hasta 4 beneficios"], "colors": [], "price": "solo el número/moneda si aparece", "audience": "", "context": "contexto de uso" }. Todo en español. Si un dato no está, dejalo vacío.`,
+      700,
+    );
+  }
+
   // ── Estrategia de campaña (OpenAI) — para el paso "IA analiza" de Nueva Campaña ──
   async campaignStrategy(input: { name?: string; description?: string; objective?: string }): Promise<any> {
     const obj = OBJECTIVES[(input.objective || '').toLowerCase()] ?? 'conversión directa a venta por WhatsApp';

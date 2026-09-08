@@ -75,6 +75,14 @@ export class CreativeController {
     return r;
   }
 
+  // Analizar producto desde una URL (autocompleta nombre/desc/beneficios/precio).
+  @Post('analyze-url') @HttpCode(HttpStatus.OK)
+  async analyzeUrl(@Body() body: { url: string }, @Request() req: any) {
+    const r = await this.svc.analyzeProductUrl(body?.url);
+    await this.cost.log({ userId: req.user.id, provider: 'openai', model: PROVIDERS.openaiChatModel, operation: 'analyze_url', estimatedProviderCostUsd: 0.001, creditsConsumed: 0, status: 'completed' }).catch(() => {});
+    return r;
+  }
+
   // Estrategia de campaña (OpenAI) — reemplaza el /ai/analyze-campaign (Anthropic, sin key).
   @Post('campaign-strategy') @HttpCode(HttpStatus.OK)
   async campaignStrategy(@Body() body: { name?: string; description?: string; objective?: string }, @Request() req: any) {

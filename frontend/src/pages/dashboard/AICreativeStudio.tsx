@@ -505,8 +505,33 @@ function StepProducto({ s, patchProduct, onAnalyze, onNext, onAddImages, onRemov
   const p = s.product as ProductInfo;
   const imgs: string[] = s.images ?? [];
   const canNext = !!(p.name?.trim() || imgs.length);
+  const [url, setUrl] = useState('');
+  const [urlLoading, setUrlLoading] = useState(false);
+  const [urlErr, setUrlErr] = useState('');
+  const analyzeUrl = async () => {
+    if (!url.trim()) return;
+    setUrlLoading(true); setUrlErr('');
+    try {
+      const d = await creativeApi.analyzeUrl(url.trim());
+      patchProduct({
+        name: d.name || p.name, description: d.description || p.description,
+        category: d.category || p.category, price: d.price || p.price,
+        features: d.features?.length ? d.features : p.features,
+        colors: d.colors?.length ? d.colors : p.colors, audience: d.audience || p.audience,
+      });
+    } catch (e: any) {
+      setUrlErr(e?.response?.data?.message || 'No pude leer el producto de ese link.');
+    } finally { setUrlLoading(false); }
+  };
   return (
-    <StepShell title="Contanos del producto" subtitle="Subí una o varias fotos y/o completá los datos. La IA genera en base a TODAS las fotos que subas.">
+    <StepShell title="Contanos del producto" subtitle="Subí fotos, pegá el link del producto, o completá los datos. La IA genera en base a lo que le des.">
+      <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 15 }}>🔗</span>
+        <input value={url} onChange={e => setUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && analyzeUrl()} placeholder="Pegá el link del producto (MercadoLibre, tu tienda…) y autocompleto los datos"
+          style={{ flex: 1, minWidth: 240, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 13, outline: 'none' }} />
+        <Btn small onClick={analyzeUrl} disabled={urlLoading || !url.trim()}>{urlLoading ? 'Leyendo…' : 'Autocompletar'}</Btn>
+        {urlErr && <span style={{ fontSize: 11.5, color: C.red, width: '100%' }}>⚠️ {urlErr}</span>}
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,320px) 1fr', gap: 22 }} className="prod-grid">
         <div>
           {imgs.length === 0 ? (
