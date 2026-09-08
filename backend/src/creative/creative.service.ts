@@ -420,7 +420,7 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
     const exact = input.exactProducts === true && hasRef;
     const refs = exact ? ([input.avatarImage].filter(Boolean) as string[]) : ([input.avatarImage, ...productPics].filter(Boolean) as string[]);
     const imagePromptFinal = exact
-      ? `handheld iPhone front-camera selfie, 9:16, wide medium selfie from head to waist, ${characterDesc}, bright friendly expression, mid-sentence talking directly to the lens, natural hand gestures with EMPTY hands (NOT holding anything), everyday room visible behind, KEEP THE LOWER THIRD OF THE FRAME SIMPLE AND UNCLUTTERED; soft natural daylight, raw iPhone texture, realistic skin and grain, no bokeh; NEGATIVE: any product, packaging, bag, box or held object, text overlay, studio look, plastic skin, beauty filter, third-person photo.`
+      ? `handheld iPhone front-camera selfie, 9:16, wide medium selfie from head to waist, ${characterDesc}, enthusiastic SALES-PRESENTER energy: excited "you have to see this" expression, one open palm extended presenting/gesturing DOWNWARD toward the lower-front of the frame (as if showcasing a product to the camera) — but EMPTY hands, NOT holding or touching anything, everyday room visible behind, KEEP THE LOWER THIRD OF THE FRAME CLEAR AND UNCLUTTERED (leave room there for the product); soft natural daylight, raw iPhone texture, realistic skin and grain, no bokeh; NEGATIVE: any product, packaging, bag, box or held object in the hands, text overlay, studio look, plastic skin, beauty filter, third-person photo.`
       : `${plan.imagePrompt}${hasRef ? ' ' + PRESERVE_PRODUCT : ''}`;
     const img = await this.imageProvider.generate({
       prompt: imagePromptFinal,
@@ -439,7 +439,7 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
     const finalScript = input.scriptOverride?.trim() || plan.script;
     const spoken = finalScript ? ` The person says in Spanish: "${finalScript}".` : '';
     const videoPromptFinal = exact
-      ? `9:16 iPhone selfie talking-head of this SAME person speaking to the lens, natural hand gestures, empty hands, subtle handheld motion, daytime white balance, sharp readable background.${spoken}`
+      ? `9:16 iPhone selfie talking-head of this SAME person enthusiastically SELLING and SHOWCASING a product to the camera: excited expression, open-hand presenting gestures toward the lower-front of the frame (as if exhibiting the product), glancing between the lens and the product area, empty hands (not touching anything), subtle handheld motion, daytime white balance, sharp readable background.${spoken}`
       : `${plan.videoPrompt || 'natural UGC selfie, person talking to camera holding the product'}${spoken}`;
     // Seedance SIEMPRE sin su audio (ruido ambiente).
     const vid = await this.videoProvider.generate({
@@ -474,7 +474,7 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
     const n = items.length;
     const cols = n <= 4 ? n : 5;
     const rows = Math.ceil(n / cols);
-    const bandH = Math.round(H * (rows > 1 ? 0.40 : 0.26));
+    const bandH = Math.round(H * (rows > 1 ? 0.44 : 0.32));
     const bandY = H - bandH;
     const pad = Math.round(W * 0.018);
     const cellW = Math.floor((W - pad) / cols) - pad;
