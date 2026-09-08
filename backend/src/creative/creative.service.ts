@@ -130,6 +130,11 @@ Devolvé JSON: { "chosenStyle": string (una de las claves de estilo), "concept":
   }, limit = 3): Promise<Array<{ key: string; label: string; description: string; prompt: string; url: string; model: string }>> {
     const styleDesc = STYLES[input.style] ?? STYLES.profesional;
     const objGuide = OBJECTIVES[input.objective] ?? OBJECTIVES.vender;
+    const refN = input.referenceImages?.length ?? (input.referenceImage ? 1 : 0);
+    const isCombo = refN > 1;
+    const comboLine = isCombo
+      ? `\nIMPORTANTE: es un COMBO de ${refN} productos (hay ${refN} imágenes de referencia). CADA prompt debe mostrar TODOS los ${refN} productos JUNTOS en la misma imagen (bundle/combo), todos visibles y legibles — NO uno solo.`
+      : '';
     // Comandos "/x" → directivas visuales en inglés; texto libre → pedido explícito.
     const { fragments, rest } = expandCommands(input.brief);
     const briefLine = (fragments.length || rest)
@@ -139,9 +144,9 @@ Devolvé JSON: { "chosenStyle": string (una de las claves de estilo), "concept":
     // 1 sola llamada GPT arma los 3 prompts visuales (barato)
     const prompts = await this.openai.chatJSON<Array<{ key: string; prompt: string }>>(
       'Sos director de arte de ADS de e-commerce (MercadoLibre / Meta Ads, Argentina). Escribís prompts visuales en INGLÉS para un modelo de imágenes, PERO todo texto que aparezca DENTRO de la imagen va en ESPAÑOL rioplatense. El producto es un asset EXACTO: no lo rediseñes.',
-      `Producto: ${JSON.stringify(input.product)}. Objetivo: ${objGuide}. Estilo base: ${styleDesc}.${briefLine}
+      `Producto: ${JSON.stringify(input.product)}. Objetivo: ${objGuide}. Estilo base: ${styleDesc}.${comboLine}${briefLine}
 Escribí 3 prompts visuales EN INGLÉS (uno por ángulo: ${VARIANT_ANGLES.map(v => v.key).join(', ')}). Cada prompt debe describir un AD de e-commerce de alta conversión con:
-- El PRODUCTO EXACTO de la referencia (misma estructura, materiales, colores, proporciones — no redibujar).
+- ${isCombo ? `TODOS los ${refN} productos EXACTOS de las referencias, mostrados JUNTOS como combo/bundle (mismos materiales, colores, proporciones — no redibujar ninguno).` : 'El PRODUCTO EXACTO de la referencia (misma estructura, materiales, colores, proporciones — no redibujar).'}
 - Escena realista con fondo contextual acorde al producto, iluminación comercial, sombras suaves, foto de producto hiperrealista (no arte, no abstracto).
 - OVERLAYS DE TEXTO EN ESPAÑOL, corto y bien escrito, indicando el texto EXACTO entre comillas: un TITULAR de venta, el PRECIO si el producto lo tiene (usá "$${input.product.price ?? ''}" ${input.product.oldPrice ? 'y precio anterior' : ''}), 2-3 BENEFICIOS clave, y un CTA.
 - Íconos minimalistas de los beneficios principales.
@@ -159,6 +164,7 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
     const out = await Promise.all(VARIANT_ANGLES.slice(0, limit).map(async angle => {
       const p = (prompts.find(x => x.key === angle.key)?.prompt
         ?? `${input.product.name}, ${styleDesc}, ${angle.desc}, professional Meta Ads creative, photorealistic, no watermark`)
+        + (isCombo ? ` COMBO: show ALL ${refN} products from the reference images TOGETHER in one composition, every product fully visible and readable, none omitted.` : '')
         + ` ${IMAGE_QUALITY_DIRECTIVE}`
         + (hasRef ? ` ${PRESERVE_PRODUCT}${productTruth}` : '');
       const r = await this.imageProvider.generate({ prompt: p, format: input.format, quality: input.quality ?? 'standard', referenceImage: input.referenceImage, referenceImages: input.referenceImages, preserveExact: hasRef });
