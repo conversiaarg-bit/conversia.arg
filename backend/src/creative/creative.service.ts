@@ -202,20 +202,28 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
     const priceLine = input.product.price ? `Precio: $${String(input.product.price).replace(/\$/g, '')}${input.product.oldPrice ? ` (antes $${String(input.product.oldPrice).replace(/\$/g, '')})` : ''}${input.product.discount ? `, ${input.product.discount} OFF` : ''}.` : '';
     const benefits = (input.product.features ?? []).filter(Boolean).join('; ');
     const plan = await this.openai.chatJSON<{ videoPrompt: string; script: string }>(
-      'Sos director creativo + copywriter de performance para Meta Ads. Escribís UN prompt de video (image-to-video, Seedance) y un GUION que VENDE. El producto de la imagen base está BLOQUEADO: diseño/colores/estructura/logos exactos, nunca lo modifiques. Realista, NO cine. Devolvé SOLO JSON válido.',
+      'Sos director cinematográfico de comerciales de comida para Meta Ads (calidad TV/DSLR, apetitoso, alta conversión). Escribís UN prompt de video image-to-video (Seedance) para animar la imagen base como UNA sola toma continua y cinematográfica del producto — NO una persona hablando a cámara. El producto de la imagen base está BLOQUEADO: packaging/diseño/colores/logos/texto exactos, jamás lo modifiques ni agregues productos que no estén. Devolvé SOLO JSON válido.',
       `Producto: ${JSON.stringify(input.product)}. Estilo: ${styleDesc}.${truth}
 ${priceLine ? 'PRECIO: ' + priceLine : ''}
 ${benefits ? 'BENEFICIOS: ' + benefits : ''}
-Formato SIEMPRE igual (anuncio que vende): gancho → muestra/prueba el producto → beneficios concretos → precio/oferta → CTA.
+Objetivo: un anuncio vertical 9:16 hiper-apetitoso y de alta conversión que genere ANTOJO. Seedance anima UNA imagen (no corta a escenas nuevas ni agrega objetos que no estén en la base), así que describí UNA toma continua con progresión de cámara.
 Devolvé JSON con "videoPrompt" y "script":
-"videoPrompt" (INGLÉS): prompt estructurado con secciones: Reference (use the base image as the EXACT product, do not change it), Scene (${secs}s, realista), Action (una persona MUESTRA y USA/PRUEBA el producto de forma natural — no solo una cara; el producto tiene que verse claramente), Camera (medium shot, slow push-in, termina en close-up del producto), Lighting (natural realista), Style (UGC Meta Ads, no cine, sin textos quemados), End frame (producto visible para CTA), Constraints (sin deformar el producto, sin objetos falsos, producto idéntico en todos los frames).
-"script" (ESPAÑOL rioplatense, ~${secs}s): la locución que VENDE — arranca con un gancho, dice que la persona lo prueba/usa, menciona 2 BENEFICIOS concretos del producto${priceLine ? ', DICE EL PRECIO/oferta' : ''}, y cierra con un CTA claro. Natural, creíble, vendedor. NO describas una cara linda: vendé el producto.`,
+"videoPrompt" (INGLÉS): prompt estructurado con secciones:
+- Reference: use the base image as the EXACT product(s), pasted 1:1, never altered.
+- Hook (0-2s): start on an appetizing MACRO of the snack texture (golden, crunchy, salty detail), subtle micro-motion, tiny natural camera shake.
+- Development (2-6s): smooth cinematic move revealing abundance and variety of the combo, soft natural highlights sliding across the packaging, mouth-watering texture; a hand MAY casually enter frame reaching for a snack (optional, realistic).
+- Hero (6-8s): slow push-in (or gentle pull-back) to a clean hero composition with ALL products together, subtle glow/highlight on the packaging, hold the final frame ~1s for the CTA.
+- Camera: 35-50mm, shallow depth of field, smooth professional motion (no glitch, no whip, no aggressive shake).
+- Lighting: bright but natural, soft studio + natural highlights, no overexposure.
+- Style: ultra-realistic cinematic food commercial, craving-focused, clean modern; NO burned-in text, NO watermark.
+- Constraints: packaging IDENTICAL every frame, no morphing/warping/flicker, no fake or duplicated products, smooth transitions only.
+"script" (ESPAÑOL rioplatense, ~${secs}s, locución OPCIONAL amistosa jóven-adulto): gancho apetitoso → variedad del combo → ${priceLine ? 'precio/oferta → ' : ''}CTA suave (deseo, no agresivo). Ej de tono: "El combo que no falla — todos tus snacks favoritos en uno".`,
       700,
     );
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
     const r = await this.videoProvider.generate({
       image: input.imageBase64,
-      prompt: `${plan.videoPrompt || 'smooth product ad, slow push-in, subtle handheld realism'} ${UGC_VIDEO_DIRECTIVE}`,
+      prompt: `${plan.videoPrompt || 'cinematic food commercial, appetizing macro of the snacks, slow push-in to a clean hero shot of the full combo, soft natural highlights on the packaging, smooth professional motion'} ${PREMIUM_VIDEO_DIRECTIVE}`,
       duration: secs, resolution: q.resolution, audio: false,
     });
     const videoUrl = q.audio ? await this.muxVoiceover(r.url, plan.script) : await this.persist(r.url, 'video');
