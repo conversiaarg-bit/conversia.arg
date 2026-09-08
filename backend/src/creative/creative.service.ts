@@ -425,7 +425,7 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
       duration: secs, resolution: q.resolution, audio: false,
     });
     const videoUrl = q.audio
-      ? await this.muxVoiceover(vid.url, finalScript, this.voiceKeyFor(input.avatarDesc))
+      ? await this.muxVoiceover(vid.url, finalScript, await this.detectVoiceKey(img.dataUrl, input.avatarDesc))
       : await this.persist(vid.url, 'video');
     return {
       productData, imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, script: finalScript,
@@ -438,6 +438,20 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
     const g = (avatarDesc || '').toLowerCase();
     if (/\b(hombre|masculino|var[oó]n|chico|muchacho|masc|male|se[ñn]or)\b/.test(g)) return 'masc_natural';
     return 'fem_natural';
+  }
+
+  // Voz que COINCIDE con la persona: 1) género explícito del texto, 2) detectado de la imagen.
+  private async detectVoiceKey(imageDataUrl: string, avatarDesc?: string): Promise<string> {
+    const g = (avatarDesc || '').toLowerCase();
+    if (/\b(hombre|masculino|var[oó]n|chico|muchacho|masc|male|se[ñn]or)\b/.test(g)) return 'masc_natural';
+    if (/\b(mujer|femenin\w*|chica|muchacha|se[ñn]ora|female)\b/.test(g)) return 'fem_natural';
+    try {
+      const r = await this.openai.chatVisionJSON<{ gender: string }>(
+        'Analizás el género aparente de la persona principal de la imagen. Solo JSON.',
+        'Devolvé {"gender":"masculino"} o {"gender":"femenino"} según la persona principal. Si no hay persona clara, "femenino".',
+        imageDataUrl, 20);
+      return r?.gender === 'masculino' ? 'masc_natural' : 'fem_natural';
+    } catch { return 'fem_natural'; }
   }
 
   // Mezcla una locución (TTS del guion) sobre el video → la persona "dice" el guion.
