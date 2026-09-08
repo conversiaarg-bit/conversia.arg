@@ -506,10 +506,13 @@ Generá el paquete y devolvé SOLO este JSON (todo en español AR, salvo las sec
     const apiKey = PROVIDERS.seedance.apiKey;
     if (!apiKey) throw new BadRequestException('Falta SEEDANCE_API_KEY (fal) para quitar el fondo.');
     if (!image) throw new BadRequestException('No hay imagen.');
-    const url = process.env.FAL_REMBG_URL ?? 'https://fal.run/fal-ai/imageutils/rembg';
+    // birefnet/v2: recorte de alta calidad, PNG transparente refinado (mejor que rembg).
+    const url = process.env.FAL_REMBG_URL ?? 'https://fal.run/fal-ai/birefnet/v2';
     try {
-      const res = await axios.post(url, { image_url: image }, {
-        headers: { Authorization: `Key ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 90_000,
+      const res = await axios.post(url, {
+        image_url: image, operating_resolution: '2048x2048', output_format: 'png', refine_foreground: true,
+      }, {
+        headers: { Authorization: `Key ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 120_000,
       });
       const out = res.data?.image?.url ?? res.data?.images?.[0]?.url;
       if (!out) throw new Error('fal no devolvió imagen');
