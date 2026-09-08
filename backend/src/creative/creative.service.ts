@@ -656,6 +656,65 @@ Generá el paquete y devolvé SOLO este JSON (todo en español AR, salvo las sec
     }
   }
 
+  // Fondos por categoría (SOLO ambiente, sin producto) — estilo publicitario.
+  private static readonly SCENE_BG: Record<string, string> = {
+    food: 'fresh vibrant natural light, wooden kitchen or table setting, appetizing, commercial food photography',
+    tech: 'minimalist clean desk, soft shadows, modern futuristic high-end tech aesthetic',
+    beauty: 'soft lighting, elegant glossy surfaces, premium cosmetic ad style',
+    fashion: 'studio lighting, neutral seamless background, editorial style, soft shadows',
+    luxury: 'dark background, dramatic lighting, premium, high contrast, cinematic, high-end product photography',
+    other: 'clean professional advertising background, soft studio lighting, neutral surface',
+  };
+
+  // PIPELINE IMAGEN PRODUCTO-EXACTO: 1) recorta el producto REAL (birefnet → PNG),
+  // 2) genera SOLO el fondo (sin producto, gpt-image-1), 3) compone el PNG real encima con
+  // sombra de contacto (sharp). El producto NUNCA se regenera → 0% alucinación.
+  async composeScene(input: { product: ProductInfo; referenceImages?: string[]; referenceImage?: string; format?: Fmt; category?: string; quality?: 'standard' | 'premium' }) {
+    const pics = (input.referenceImages?.length ? input.referenceImages : [input.referenceImage]).filter(Boolean) as string[];
+    if (!pics.length) throw new BadRequestException('Subí al menos una foto del producto.');
+    const cat = (input.category || input.product.category || 'other').toLowerCase();
+    const bgKey = ['food', 'tech', 'beauty', 'fashion', 'luxury'].includes(cat) ? cat : 'other';
+    const format = input.format ?? '9:16';
+    // 1) FONDO SOLO (gpt-image-1 no tiene "negative", lo plegamos en el prompt).
+    const bgPrompt = `${CreativeService.SCENE_BG[bgKey]}, clean composition, advertising style, ultra realistic, 4k, depth of field, professional lighting, high detail, EMPTY scene with a clear open central area for a product to be placed later. ABSOLUTELY NO product, no object, no item, no packaging, no bag, no text, no logo, no watermark.`;
+    const bg = await this.imageProvider.generate({ prompt: bgPrompt, format, quality: input.quality ?? 'standard' });
+    // 2) Recortar cada producto (birefnet) → buffer PNG transparente.
+    const cutouts = await Promise.all(pics.map(async p => this.toBuf((await this.removeBackground(p)).imageUrl)));
+    // 3) Componer producto(s) real(es) sobre el fondo con sombra suave.
+    const composed = await this.compositeOnBackground(bg.dataUrl, cutouts, format);
+    const imageUrl = await this.persist(composed, 'image');
+    return { imageUrl, model: bg.model };
+  }
+
+  // Compone cutouts PNG sobre un fondo generado, centrados, con sombra de contacto (sharp).
+  private async compositeOnBackground(bgDataUrl: string, cutouts: Buffer[], format: Fmt): Promise<string> {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const sharp = require('sharp') as typeof import('sharp');
+    const [W, H] = format === '1:1' ? [1080, 1080] : format === '4:5' ? [1080, 1350] : [1080, 1920];
+    const base = sharp(Buffer.from(bgDataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64')).resize(W, H, { fit: 'cover' });
+    const n = cutouts.length;
+    const cols = n === 1 ? 1 : Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+    const areaW = W * 0.84, areaH = H * 0.66, areaX = (W - areaW) / 2, areaY = (H - areaH) / 2;
+    const cw = areaW / cols, ch = areaH / rows, pad = cw * 0.06;
+    const placed: { cell: Buffer; left: number; top: number; w: number; h: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      const col = i % cols, row = Math.floor(i / cols);
+      const inRow = Math.min(cols, n - row * cols);
+      const rowStartX = areaX + (areaW - inRow * cw) / 2;
+      const cell = await sharp(cutouts[i]).resize(Math.round(cw - pad * 2), Math.round(ch - pad * 2), { fit: 'inside' }).png().toBuffer();
+      const cm = await sharp(cell).metadata();
+      const w = cm.width ?? 0, h = cm.height ?? 0;
+      const left = Math.round(rowStartX + col * cw + (cw - w) / 2);
+      const top = Math.round(areaY + row * ch + (ch - h) / 2);
+      placed.push({ cell, left, top, w, h });
+    }
+    const ell = placed.map(p => `<ellipse cx="${p.left + p.w / 2}" cy="${p.top + p.h - 6}" rx="${Math.round(p.w * 0.42)}" ry="${Math.max(10, Math.round(p.w * 0.07))}" fill="#000"/>`).join('');
+    const shadow = Buffer.from(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs><filter id="b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="${Math.round(W * 0.012)}"/></filter></defs><g filter="url(#b)" opacity="0.34">${ell}</g></svg>`);
+    const layers: import('sharp').OverlayOptions[] = [{ input: shadow, top: 0, left: 0 }, ...placed.map(p => ({ input: p.cell, top: p.top, left: p.left }))];
+    const out = await base.composite(layers).jpeg({ quality: 92 }).toBuffer();
+    return `data:image/jpeg;base64,${out.toString('base64')}`;
+  }
+
   // ── Analizar producto desde una URL (scrape + OpenAI) → autocompleta el producto ──
   async analyzeProductUrl(url: string): Promise<any> {
     if (!/^https?:\/\//i.test(url)) throw new BadRequestException('URL inválida (debe empezar con http).');

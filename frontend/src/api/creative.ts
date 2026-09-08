@@ -38,6 +38,10 @@ export const creativeApi = {
   adPackage: (body: { product: ProductInfo; referenceImage?: string; referenceImages?: string[]; avatarUsar?: boolean; seconds?: number }) =>
     D<any>(api.post('/creative/ad-package', body, { timeout: 90_000 })),
 
+  // Escena producto-exacto: recorta el producto real + fondo generado + composición (sin regenerar).
+  composeScene: (body: { product: ProductInfo; referenceImages?: string[]; referenceImage?: string; format?: Fmt; category?: string; quality?: 'standard' | 'premium' }) =>
+    D<{ imageUrl: string; credits: number; creditsUsed: number }>(api.post('/creative/compose-scene', body, { timeout: 180_000, ...idem() })),
+
   strategy: (body: { product: ProductInfo; objective: string; style: string }) =>
     D<Strategy>(api.post('/creative/strategy', body, { timeout: 60_000 })),
 

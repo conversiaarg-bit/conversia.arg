@@ -329,6 +329,18 @@ export default function AICreativeStudio() {
     patch({ variants: s.variants.map(v => v.key === angleKey ? r.variant : v) });
   });
 
+  // Fondo profesional (producto EXACTO): recorta tus fotos reales + genera solo el fondo +
+  // compone el producto encima (nunca lo regenera). 1 imagen.
+  const composeScene = () => run('images', async () => {
+    const raw: string[] = s.images?.length ? s.images : (s.imageBase64 ? [s.imageBase64] : []);
+    const srcs = await Promise.all(raw.map(i => shrink(i)));
+    if (!srcs.length) return;
+    const r = await creativeApi.composeScene({ product: s.product, referenceImages: srcs, format: s.format, category: s.product.category });
+    const v: ImageVariant = { key: 'scene', label: 'Fondo profesional', description: 'Producto real + fondo IA (sin regenerar)', prompt: '', url: r.imageUrl, model: 'scene' };
+    patch({ variants: [v, ...s.variants.filter(x => x.key !== 'scene')], selectedImage: v });
+    setCredits(r.credits);
+  });
+
   const genVideo = (duration: '5' | '10') => run('video', async () => {
     // Base del video: si hay VARIOS productos, un combo con TODOS (no uno solo).
     const srcs: string[] = s.images?.length ? s.images : (s.selectedImage ? [s.selectedImage.url] : []);
@@ -393,7 +405,7 @@ export default function AICreativeStudio() {
                 {step === 1 && <StepProducto s={s} patch={patch} patchProduct={patchProduct} onAnalyze={analyze} onNext={() => goto(2)} onAddImages={addImages} onRemoveImage={removeImage} />}
                 {step === 2 && <StepObjetivo s={s} setObjective={(o: string) => patch({ objective: o })} onBack={() => goto(1)} onNext={() => goto(3)} />}
                 {step === 3 && <StepEstilo s={s} setStyle={(st: string) => patch({ style: st })} onBack={() => goto(2)} onNext={s.strategy ? () => goto(4) : buildStrategyAndGo} nextLabel={s.strategy ? 'Ir a imagen →' : 'Crear estrategia →'} />}
-                {step === 4 && <StepImagen s={s} costs={costs} patch={patch} setFormat={(f: Fmt) => patch({ format: f })} setBrief={(b: string) => patch({ brief: b })} onGen={(q?: 'standard' | 'premium') => withConfirm((s.images?.length || s.imageBase64) ? 0 : costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm((s.images?.length || s.imageBase64) ? 0 : costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => { const m = v.key.match(/(9:16|4:5|1:1)$/); patch({ selectedImage: v, ...(m ? { format: m[1] as Fmt } : {}) }); }} onDownload={(v: ImageVariant) => downloadImage(v.url, `creativo-${v.key}`)} onBack={() => goto(3)} onNext={() => goto(5)} />}
+                {step === 4 && <StepImagen s={s} costs={costs} patch={patch} setFormat={(f: Fmt) => patch({ format: f })} setBrief={(b: string) => patch({ brief: b })} onGen={(q?: 'standard' | 'premium') => withConfirm((s.images?.length || s.imageBase64) ? 0 : costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm((s.images?.length || s.imageBase64) ? 0 : costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => { const m = v.key.match(/(9:16|4:5|1:1)$/); patch({ selectedImage: v, ...(m ? { format: m[1] as Fmt } : {}) }); }} onComposeScene={() => withConfirm(costs.imageRegen ?? 3, 'Fondo profesional (producto exacto)', composeScene)} onDownload={(v: ImageVariant) => downloadImage(v.url, `creativo-${v.key}`)} onBack={() => goto(3)} onNext={() => goto(5)} />}
                 {step === 5 && (() => {
                   const vqOpt = videoQualities.find(q => q.key === vq) ?? videoQualities[0];
                   return <StepVideo s={s} vqOptions={videoQualities} vq={vq} setVq={setVq} onGen={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar video ${d}s (${vqOpt.label})`, () => genVideo(d))} onUGC={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar UGC ${d}s (${vqOpt.label})`, () => genUGC(d))} onBack={() => goto(4)} onNext={() => goto(6)} />;
@@ -778,7 +790,7 @@ function recommendCommands(s: any): string[] {
 }
 
 // ── PASO 4: Imagen ────────────────────────────────────────────────────────────
-function StepImagen({ s, patch, setFormat, setBrief, onGen, onRegen, onPick, onDownload, onBack, onNext }: any) {
+function StepImagen({ s, patch, setFormat, setBrief, onGen, onRegen, onPick, onComposeScene, onDownload, onBack, onNext }: any) {
   const FMTS: Fmt[] = ['9:16', '4:5', '1:1'];
   const FMT_LABEL: Record<string, string> = { '9:16': 'Reel / Stories', '4:5': 'Feed Instagram', '1:1': 'Feed / Facebook' };
   const has = s.variants.length > 0;
@@ -859,6 +871,9 @@ function StepImagen({ s, patch, setFormat, setBrief, onGen, onRegen, onPick, onD
           </Btn>
           <Btn small ghost={s.selectedImage?.model !== 'template'} onClick={() => buildFormatSet('template')} disabled={tplLoading} title="Arma un ad de oferta con tu producto REAL (pixel-perfect) y texto/precio nítidos, en los 3 formatos">
             {tplLoading ? 'Armando…' : s.selectedImage?.model === 'template' ? '✓ Plantilla · 3 formatos' : `🏷️ Plantilla de oferta — 3 formatos${(s.images?.length ?? 0) > 1 ? ` · ${s.images.length} prod.` : ''} (0 créditos)`}
+          </Btn>
+          <Btn small ghost={s.selectedImage?.model !== 'scene'} onClick={onComposeScene} title="Recorta tu producto REAL y genera un fondo publicitario profesional detrás (el producto no se regenera, queda idéntico)">
+            {s.selectedImage?.model === 'scene' ? '✓ Fondo profesional' : '🌆 Fondo profesional — producto exacto (1 imagen)'}
           </Btn>
         </div>
       )}

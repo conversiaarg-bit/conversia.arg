@@ -191,6 +191,18 @@ export class CreativeController {
     return { ...(result as any), credits, creditsUsed };
   }
 
+  // Escena producto-exacto: recorta el producto REAL + fondo generado + composición (sin regenerar).
+  @Post('compose-scene') @HttpCode(HttpStatus.OK)
+  @Throttle({ medium: { limit: 10, ttl: 60000 } })
+  async composeScene(@Body() body: any, @Request() req: any) {
+    await this.assertFree(req, 'image');
+    const op: CreditOperation = body?.quality === 'premium' ? 'image_premium' : 'image_standard';
+    const { result, credits, creditsUsed } = await this.billed(req,
+      { operation: op, amount: CREDIT_COSTS[op], provider: PROVIDERS.image, model: PROVIDERS.openaiImageModel },
+      () => this.svc.composeScene(body));
+    return { ...(result as any), credits, creditsUsed };
+  }
+
   // ── UGC (persona IA) ─────────────────────────────────────────────────────────
   @Get('creators')
   creators() { return { creators: CREATOR_PRESETS }; }
