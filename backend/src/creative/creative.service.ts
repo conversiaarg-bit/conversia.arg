@@ -522,7 +522,10 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
       }
       const out = path.join(tmp, 'out.mp4'); const outOpts: string[] = [];
       if (pngIdx >= 0) {
-        cmd = cmd.complexFilter([`[${pngIdx}:v][0:v]scale2ref=w=iw:h=ih[ov][bv]`, `[bv][ov]overlay=0:0[v]`]);
+        // scale2ref (sin args) escala el PNG (input pngIdx) al tamaño del video de referencia [0:v].
+        // Salidas: [ov] = PNG escalado, [bv] = video. Antes se escalaba a su propio tamaño y la
+        // banda quedaba fuera de cuadro (por eso no aparecía). overlay bottom-anchored por las dudas.
+        cmd = cmd.complexFilter([`[${pngIdx}:v][0:v]scale2ref[ov][bv]`, `[bv][ov]overlay=(W-w)/2:H-h[v]`]);
         outOpts.push('-map', '[v]', '-c:v', 'libx264', '-pix_fmt', 'yuv420p');
       } else { outOpts.push('-map', '0:v:0', '-c:v', 'copy'); }
       if (audIdx >= 0) outOpts.push('-map', `${audIdx}:a:0`, '-c:a', 'aac', '-shortest');
