@@ -6,6 +6,25 @@ import CampaignCanvas, { type Pipe } from './CampaignCanvas';
 
 const toBase64 = (file: File) => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file); });
 
+// Comprime una foto (data URL) a ≤1024px JPEG antes de mandarla como referencia.
+// gpt-image-1 downsamplea a 1024 igual; mandar fotos de celular crudas (varios MB c/u)
+// hace el POST enorme y lento → el cliente corta con "Falló". http/urls pasan de largo.
+const shrink = (src: string, max = 1024): Promise<string> => new Promise(res => {
+  if (!src || !src.startsWith('data:')) return res(src);
+  const img = new Image();
+  img.onload = () => {
+    const sc = Math.min(1, max / Math.max(img.width, img.height));
+    if (sc >= 1 && src.length < 500_000) return res(src); // ya es chica
+    const w = Math.round(img.width * sc), h = Math.round(img.height * sc);
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d'); if (!ctx) return res(src);
+    ctx.drawImage(img, 0, 0, w, h);
+    try { res(cv.toDataURL('image/jpeg', 0.9)); } catch { res(src); }
+  };
+  img.onerror = () => res(src);
+  img.src = src;
+});
+
 type SceneStatus = 'idle' | 'running' | 'done' | 'error';
 interface SceneRun { status: SceneStatus; imageUrl?: string; videoUrl?: string }
 
@@ -114,9 +133,12 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     // Para generar la persona con el producto EXACTO, gpt-image-1 necesita las fotos
     // INDIVIDUALES (no un collage): con un collage no puede aislar un producto y termina
     // inventando uno. El combo recortado se muestra igual (el prompt pide todos los productos).
-    const productRef = productImages[0] || imageBase64 || comboImage;
-    if (!productRef && productImages.length === 0) { pushMsg('copilot', 'Primero subí al menos una foto del producto (📎 acá o 📷 arriba).'); return; }
-    const refsArr = productImages.length > 1 ? productImages : undefined;
+    const srcs = (productImages.length ? productImages : [imageBase64 || comboImage]).filter(Boolean) as string[];
+    if (!srcs.length) { pushMsg('copilot', 'Primero subí al menos una foto del producto (📎 acá o 📷 arriba).'); return; }
+    // Comprimir cada referencia → POST liviano (evita el "Falló" por payload gigante).
+    const shrunk = await Promise.all(srcs.map(i => shrink(i)));
+    const productRef = shrunk[0];
+    const refsArr = shrunk.length > 1 ? shrunk : undefined;
     if (!window.confirm(`Generar el video usará ${oneShotCost} créditos (imagen con OpenAI + 1 video con Seedance). Tenés ${credits}. ¿Continuar?`)) return;
     setRunning(true); setErr(null); setPipe({});
     pushMsg('copilot', 'Generando: OpenAI arma el prompt de imagen y de video, crea la imagen del personaje con el producto, y Seedance hace el video…');

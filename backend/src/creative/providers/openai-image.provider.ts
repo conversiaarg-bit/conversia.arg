@@ -62,7 +62,7 @@ export class OpenAIImageProvider implements ImageProvider {
         // (preserveExact o HD/premium). Preserva packaging/logo/texto sin redibujarlo (~3x costo).
         form.append('input_fidelity', (input.preserveExact || input.quality === 'premium') ? 'high' : 'low');
         form.append('n', '1');
-        const res = await axios.post('https://api.openai.com/v1/images/edits', form, { headers, timeout: 120_000 });
+        const res = await axios.post('https://api.openai.com/v1/images/edits', form, { headers, timeout: 180_000 });
         const out = res.data?.data?.[0]?.b64_json;
         if (out) return { dataUrl: `data:image/png;base64,${out}`, model };
       } catch (e: any) {
@@ -77,7 +77,7 @@ export class OpenAIImageProvider implements ImageProvider {
     try {
       const res = await axios.post('https://api.openai.com/v1/images/generations', {
         model, prompt: input.prompt, n: 1, size, quality,
-      }, { headers: { ...headers, 'Content-Type': 'application/json' }, timeout: 120_000 });
+      }, { headers: { ...headers, 'Content-Type': 'application/json' }, timeout: 180_000 });
       const out = res.data?.data?.[0]?.b64_json;
       if (!out) throw new Error('OpenAI no devolvió imagen');
       return { dataUrl: `data:image/png;base64,${out}`, model };
