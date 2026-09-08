@@ -199,20 +199,17 @@ JSON: [ { "key": "oferta", "prompt": "..." }, { "key": "premium", "prompt": "...
     const styleDesc = STYLES[input.style] ?? STYLES.profesional;
     // Analyzer: producto exacto como verdad absoluta.
     const { truth } = await this.extractProductTruth(input.imageBase64);
+    const priceLine = input.product.price ? `Precio: $${String(input.product.price).replace(/\$/g, '')}${input.product.oldPrice ? ` (antes $${String(input.product.oldPrice).replace(/\$/g, '')})` : ''}${input.product.discount ? `, ${input.product.discount} OFF` : ''}.` : '';
+    const benefits = (input.product.features ?? []).filter(Boolean).join('; ');
     const plan = await this.openai.chatJSON<{ videoPrompt: string; script: string }>(
-      'You are a senior creative director + AI video engineer. You write ONE complete, structured image-to-video prompt for Seedance to produce a Meta Ads UGC-style product ad. The product in the base image is LOCKED: exact design, colors, structure, logos and text — never change or deform it. Realistic, NOT a cinematic movie. Output ONLY valid JSON.',
-      `Product: ${JSON.stringify(input.product)}. Style: ${styleDesc}.${truth}
-Return JSON with "videoPrompt" and "script".
-"videoPrompt" (ENGLISH): a COMPLETE prompt with these LABELED sections, tailored to THIS product:
-Reference: use the base image as the EXACT product reference — do not change the product design, colors or structure.
-Scene: a realistic everyday setting that fits the product (${secs}s).
-Action: a person naturally using/showing the product (realistic hand interaction) OR, if no person fits, subtle real-world product motion.
-Camera: start on a medium shot with a slow push-in toward the product, then a slight handheld movement for realism, end on a close-up of the product details.
-Lighting: natural, realistic, warm, soft shadows.
-Style: UGC-style Meta Ads, realistic, high-quality, NOT cinematic movie style, no text overlays.
-End frame: product clearly visible, clean framing for a CTA.
-Constraints: no product deformation, no fake objects, no text overlays, realistic hand interaction, product identical in every frame.
-"script" (ESPAÑOL rioplatense): la locución hablada que se escucha, clara, natural y vendedora, con un CTA al final, para ~${secs} segundos.`,
+      'Sos director creativo + copywriter de performance para Meta Ads. Escribís UN prompt de video (image-to-video, Seedance) y un GUION que VENDE. El producto de la imagen base está BLOQUEADO: diseño/colores/estructura/logos exactos, nunca lo modifiques. Realista, NO cine. Devolvé SOLO JSON válido.',
+      `Producto: ${JSON.stringify(input.product)}. Estilo: ${styleDesc}.${truth}
+${priceLine ? 'PRECIO: ' + priceLine : ''}
+${benefits ? 'BENEFICIOS: ' + benefits : ''}
+Formato SIEMPRE igual (anuncio que vende): gancho → muestra/prueba el producto → beneficios concretos → precio/oferta → CTA.
+Devolvé JSON con "videoPrompt" y "script":
+"videoPrompt" (INGLÉS): prompt estructurado con secciones: Reference (use the base image as the EXACT product, do not change it), Scene (${secs}s, realista), Action (una persona MUESTRA y USA/PRUEBA el producto de forma natural — no solo una cara; el producto tiene que verse claramente), Camera (medium shot, slow push-in, termina en close-up del producto), Lighting (natural realista), Style (UGC Meta Ads, no cine, sin textos quemados), End frame (producto visible para CTA), Constraints (sin deformar el producto, sin objetos falsos, producto idéntico en todos los frames).
+"script" (ESPAÑOL rioplatense, ~${secs}s): la locución que VENDE — arranca con un gancho, dice que la persona lo prueba/usa, menciona 2 BENEFICIOS concretos del producto${priceLine ? ', DICE EL PRECIO/oferta' : ''}, y cierra con un CTA claro. Natural, creíble, vendedor. NO describas una cara linda: vendé el producto.`,
       700,
     );
     const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];

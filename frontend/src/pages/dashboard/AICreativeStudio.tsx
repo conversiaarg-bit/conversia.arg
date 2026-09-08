@@ -138,6 +138,24 @@ async function renderOfferTemplate(srcs: string[], p: ProductInfo, format: Fmt, 
   return cv.toDataURL('image/png');
 }
 
+// Combo LIMPIO (productos reales en grilla sobre fondo blanco, sin texto) — base para el video.
+async function renderCleanCombo(srcs: string[], format: Fmt): Promise<string> {
+  const toData = async (u: string) => { if (u.startsWith('data:')) return u; try { const rb = await fetch(u); const bl = await rb.blob(); return await new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(bl); }); } catch { return u; } };
+  const load = async (u: string) => { const d = await toData(u); return new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = d; }); };
+  const imgs = await Promise.all(srcs.filter(Boolean).map(load));
+  const [W, H] = format === '1:1' ? [1080, 1080] : format === '4:5' ? [1080, 1350] : [1080, 1920];
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d'); if (!ctx) throw new Error('canvas');
+  const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#ffffff'); bg.addColorStop(1, '#eef1f5');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const n = imgs.length, cols = n === 1 ? 1 : Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+  const cw = W / cols, ch = H / rows, pad = cw * 0.08;
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 12;
+  imgs.forEach((im, i) => { const gx = (i % cols) * cw, gy = Math.floor(i / cols) * ch; const sc = Math.min((cw - pad * 2) / im.width, (ch - pad * 2) / im.height); const dw = im.width * sc, dh = im.height * sc; ctx.drawImage(im, gx + (cw - dw) / 2, gy + (ch - dh) / 2, dw, dh); });
+  ctx.restore();
+  return cv.toDataURL('image/png');
+}
+
 // Cache EN MEMORIA (sobrevive navegación dentro de la app; no se pierde el video al volver).
 const studioCache: { s?: StudioState; view?: 'launcher' | 'studio' | 'campaign' | 'history'; step?: number; maxStep?: number } = {};
 const isUrl = (u?: string) => !!u && /^https?:\/\//.test(u);
@@ -275,8 +293,11 @@ export default function AICreativeStudio() {
   });
 
   const genVideo = (duration: '5' | '10') => run('video', async () => {
-    if (!s.selectedImage) return;
-    const r = await creativeApi.video({ imageBase64: s.selectedImage.url, product: s.product, style: s.strategy?.chosenStyle || s.style, duration, videoQuality: vq });
+    // Base del video: si hay VARIOS productos, un combo con TODOS (no uno solo).
+    const srcs: string[] = s.images?.length ? s.images : (s.selectedImage ? [s.selectedImage.url] : []);
+    if (!srcs.length) return;
+    const base = srcs.length > 1 ? await renderCleanCombo(srcs, s.format) : (s.selectedImage?.url || srcs[0]);
+    const r = await creativeApi.video({ imageBase64: base, product: s.product, style: s.strategy?.chosenStyle || s.style, duration, videoQuality: vq });
     patch({ videoUrl: r.videoUrl }); setCredits(r.credits);
   });
 
@@ -931,7 +952,7 @@ function StepVideo({ s, vqOptions, vq, setVq, onGen, onUGC, onBack, onNext }: an
                   </button>
                 ))}
               </div>
-              <Btn style={{ marginTop: 14 }} onClick={() => onGen(dur)} disabled={!s.selectedImage}>🎬 {s.videoUrl ? 'Regenerar' : 'Generar'} video</Btn>
+              <Btn style={{ marginTop: 14 }} onClick={() => onGen(dur)} disabled={!s.selectedImage && !(s.images?.length)}>🎬 {s.videoUrl ? 'Regenerar' : 'Generar'} video{(s.images?.length ?? 0) > 1 ? ` (combo ${s.images.length})` : ''}</Btn>
             </>
           ) : (
             <>
