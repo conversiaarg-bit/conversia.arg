@@ -75,6 +75,14 @@ export class CreativeController {
     return r;
   }
 
+  // Quitar fondo del producto (fal rembg) → PNG transparente pixel-perfect. Gratis (utilidad).
+  @Post('remove-bg') @HttpCode(HttpStatus.OK)
+  async removeBg(@Body() body: { image: string }, @Request() req: any) {
+    const r = await this.svc.removeBackground(body?.image);
+    await this.cost.log({ userId: req.user.id, provider: 'fal', model: 'rembg', operation: 'remove_bg', estimatedProviderCostUsd: 0.008, creditsConsumed: 0, status: 'completed' }).catch(() => {});
+    return r;
+  }
+
   // Analizar producto desde una URL (autocompleta nombre/desc/beneficios/precio).
   @Post('analyze-url') @HttpCode(HttpStatus.OK)
   async analyzeUrl(@Body() body: { url: string }, @Request() req: any) {

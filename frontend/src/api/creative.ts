@@ -25,6 +25,9 @@ export const creativeApi = {
   analyze: (body: { name?: string; description?: string; imageBase64?: string }) =>
     D<ProductInfo>(api.post('/creative/analyze', body, { timeout: 60_000 })),
 
+  removeBg: (image: string) =>
+    D<{ imageUrl: string }>(api.post('/creative/remove-bg', { image }, { timeout: 90_000 })),
+
   analyzeUrl: (url: string) =>
     D<{ name?: string; category?: string; description?: string; features?: string[]; colors?: string[]; price?: string; audience?: string; context?: string }>(api.post('/creative/analyze-url', { url }, { timeout: 45_000 })),
 

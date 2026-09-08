@@ -500,11 +500,21 @@ function StepRail({ step, maxStep, goto }: { step: number; maxStep: number; goto
 }
 
 // ── PASO 1: Producto ──────────────────────────────────────────────────────────
-function StepProducto({ s, patchProduct, onAnalyze, onNext, onAddImages, onRemoveImage }: any) {
+function StepProducto({ s, patch, patchProduct, onAnalyze, onNext, onAddImages, onRemoveImage }: any) {
   const fileRef = useRef<HTMLInputElement>(null);
   const p = s.product as ProductInfo;
   const imgs: string[] = s.images ?? [];
   const canNext = !!(p.name?.trim() || imgs.length);
+  const [bgLoading, setBgLoading] = useState(false);
+  const removeBg = async () => {
+    if (!imgs[0]) return;
+    setBgLoading(true);
+    try {
+      const r = await creativeApi.removeBg(imgs[0]);
+      patch({ images: [r.imageUrl, ...imgs.slice(1)], imageBase64: r.imageUrl });
+    } catch { /* el botón queda disponible para reintentar */ }
+    finally { setBgLoading(false); }
+  };
   const [url, setUrl] = useState('');
   const [urlLoading, setUrlLoading] = useState(false);
   const [urlErr, setUrlErr] = useState('');
@@ -551,6 +561,7 @@ function StepProducto({ s, patchProduct, onAnalyze, onNext, onAddImages, onRemov
           )}
           <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={e => { if (e.target.files?.length) onAddImages(e.target.files); e.currentTarget.value = ''; }} />
           {imgs.length > 0 && <Btn ghost small style={{ marginTop: 10, width: '100%' }} onClick={onAnalyze}>🧠 Analizar con IA ({imgs.length} foto{imgs.length > 1 ? 's' : ''})</Btn>}
+          {imgs.length > 0 && <Btn ghost small style={{ marginTop: 8, width: '100%' }} onClick={removeBg} disabled={bgLoading} title="Recorta el producto real (fondo transparente, sin regenerarlo)">{bgLoading ? 'Quitando fondo…' : '🎯 Producto limpio (quitar fondo)'}</Btn>}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Field label="Nombre" value={p.name} onChange={v => patchProduct({ name: v })} placeholder="Ej: Zapatillas Nike Air Max" />

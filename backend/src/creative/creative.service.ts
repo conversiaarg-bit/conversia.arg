@@ -7,6 +7,7 @@ import { IMAGE_PROVIDER, VIDEO_PROVIDER, ImageProvider, VideoProvider } from './
 import { CREATOR_PRESETS, SCENE_BY_CATEGORY, creatorByKey } from './creators.config';
 import { expandCommands } from './commands.config';
 import { VIDEO_QUALITY, videoQuality } from '../config/credits.config';
+import { PROVIDERS } from '../config/providers.config';
 
 // Directiva GLOBAL: siempre que hay una imagen de referencia, se usa el artículo ORIGINAL
 // sin modificarlo. La publicidad es de ESE producto, no de uno parecido.
@@ -497,6 +498,27 @@ Generá el paquete y devolvé SOLO este JSON (todo en español AR, salvo las sec
     const dataUrl = await this.openai.speech(text || 'Hola, esto es una muestra de voz.', voiceKey);
     const audioUrl = await this.persist(dataUrl, 'image'); // persist genérico (mp3)
     return { audioUrl };
+  }
+
+  // ── Quitar fondo del producto (fal.ai rembg) → PNG transparente PIXEL-PERFECT ────
+  // Recorte real (no regenera el producto). Usa la misma key de fal que Seedance.
+  async removeBackground(image: string): Promise<{ imageUrl: string }> {
+    const apiKey = PROVIDERS.seedance.apiKey;
+    if (!apiKey) throw new BadRequestException('Falta SEEDANCE_API_KEY (fal) para quitar el fondo.');
+    if (!image) throw new BadRequestException('No hay imagen.');
+    const url = process.env.FAL_REMBG_URL ?? 'https://fal.run/fal-ai/imageutils/rembg';
+    try {
+      const res = await axios.post(url, { image_url: image }, {
+        headers: { Authorization: `Key ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 90_000,
+      });
+      const out = res.data?.image?.url ?? res.data?.images?.[0]?.url;
+      if (!out) throw new Error('fal no devolvió imagen');
+      const imageUrl = await this.persist(out, 'image'); // se guarda en el Volume
+      return { imageUrl };
+    } catch (e: any) {
+      this.logger.warn(`removeBackground falló: ${e?.message}`);
+      throw new BadRequestException('No pude quitar el fondo del producto.');
+    }
   }
 
   // ── Analizar producto desde una URL (scrape + OpenAI) → autocompleta el producto ──
