@@ -51,6 +51,25 @@ const toBase64 = (file: File) => new Promise<string>((res, rej) => {
   const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file);
 });
 
+// Comprime una foto (data URL) a ≤1024px JPEG antes de mandarla como referencia a la IA.
+// gpt-image-1 downsamplea a 1024 igual; mandar fotos de celular crudas (varios MB c/u) hace
+// el POST enorme → el cliente corta con "Falló". http/urls pasan de largo.
+const shrink = (src: string, max = 1024): Promise<string> => new Promise(res => {
+  if (!src || !src.startsWith('data:')) return res(src);
+  const img = new Image();
+  img.onload = () => {
+    const sc = Math.min(1, max / Math.max(img.width, img.height));
+    if (sc >= 1 && src.length < 500_000) return res(src);
+    const w = Math.round(img.width * sc), h = Math.round(img.height * sc);
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d'); if (!ctx) return res(src);
+    ctx.drawImage(img, 0, 0, w, h);
+    try { res(cv.toDataURL('image/jpeg', 0.9)); } catch { res(src); }
+  };
+  img.onerror = () => res(src);
+  img.src = src;
+});
+
 const money = (v?: string) => (v ? String(v) : '');
 
 function friendly(e: any): string {
@@ -322,7 +341,8 @@ export default function AICreativeStudio() {
   const genUGC = (duration: '5' | '10' = '10') => run('ugc', async () => {
     // Pipeline único: usa TODOS los productos (combo), guion en español rioplatense y
     // locución real (voz TTS mezclada). La persona habla el guion, no ruido en inglés.
-    const srcs: string[] = s.images?.length ? s.images : (s.imageBase64 ? [s.imageBase64] : []);
+    const raw: string[] = s.images?.length ? s.images : (s.imageBase64 ? [s.imageBase64] : []);
+    const srcs = await Promise.all(raw.map(i => shrink(i))); // comprimir → POST liviano (evita "Falló")
     const r = await creativeApi.ugcOneShot({ product: s.product, referenceImages: srcs, format: s.format, videoQuality: vq, duration });
     patch({ videoUrl: r.videoUrl ?? undefined, selectedImage: s.selectedImage ?? { key: 'ugc', label: 'UGC', description: '', prompt: '', url: r.imageUrl, model: '' } });
     setCredits(r.credits);
