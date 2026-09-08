@@ -762,6 +762,19 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
         </div>
       )}
 
+      {/* Preview de la imagen elegida sin IA (plantilla / mi imagen) */}
+      {(s.selectedImage?.model === 'template' || s.selectedImage?.model === 'original') && (
+        <div style={{ marginBottom: 18, textAlign: 'center' }}>
+          <div style={{ display: 'inline-block', borderRadius: 14, overflow: 'hidden', border: `2px solid ${C.accent}`, maxWidth: 320 }}>
+            <img src={s.selectedImage.url} alt="creativo" style={{ width: '100%', display: 'block' }} />
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <Btn small ghost onClick={() => onDownload(s.selectedImage)}>⬇ Descargar</Btn>
+            <Btn small onClick={onNext}>Continuar a video →</Btn>
+          </div>
+        </div>
+      )}
+
       {!has ? (
         <div style={{ display: 'grid', placeItems: 'center', padding: '48px 0', border: `1.5px dashed ${C.border}`, borderRadius: 16, background: C.surface }}>
           <div style={{ fontSize: 34 }}>🎨</div>
