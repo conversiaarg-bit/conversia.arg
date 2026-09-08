@@ -507,11 +507,12 @@ function StepProducto({ s, patch, patchProduct, onAnalyze, onNext, onAddImages, 
   const canNext = !!(p.name?.trim() || imgs.length);
   const [bgLoading, setBgLoading] = useState(false);
   const removeBg = async () => {
-    if (!imgs[0]) return;
+    if (!imgs.length) return;
     setBgLoading(true);
     try {
-      const r = await creativeApi.removeBg(imgs[0]);
-      patch({ images: [r.imageUrl, ...imgs.slice(1)], imageBase64: r.imageUrl });
+      // Recorta TODAS las imágenes (en paralelo). Si alguna falla, deja la original.
+      const clean = await Promise.all(imgs.map(im => creativeApi.removeBg(im).then(r => r.imageUrl).catch(() => im)));
+      patch({ images: clean, imageBase64: clean[0] });
     } catch { /* el botón queda disponible para reintentar */ }
     finally { setBgLoading(false); }
   };
@@ -563,7 +564,7 @@ function StepProducto({ s, patch, patchProduct, onAnalyze, onNext, onAddImages, 
           )}
           <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={e => { if (e.target.files?.length) onAddImages(e.target.files); e.currentTarget.value = ''; }} />
           {imgs.length > 0 && <Btn ghost small style={{ marginTop: 10, width: '100%' }} onClick={onAnalyze}>🧠 Analizar con IA ({imgs.length} foto{imgs.length > 1 ? 's' : ''})</Btn>}
-          {imgs.length > 0 && <Btn ghost small style={{ marginTop: 8, width: '100%' }} onClick={removeBg} disabled={bgLoading} title="Recorta el producto real (fondo transparente, sin regenerarlo)">{bgLoading ? 'Quitando fondo…' : '🎯 Producto limpio (quitar fondo)'}</Btn>}
+          {imgs.length > 0 && <Btn ghost small style={{ marginTop: 8, width: '100%' }} onClick={removeBg} disabled={bgLoading} title="Recorta el producto real (fondo transparente, sin regenerarlo)">{bgLoading ? `Quitando fondo a ${imgs.length}…` : `🎯 Producto limpio · quitar fondo (${imgs.length})`}</Btn>}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Field label="Nombre" value={p.name} onChange={v => patchProduct({ name: v })} placeholder="Ej: Zapatillas Nike Air Max" />
