@@ -472,19 +472,27 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
   private async buildProductOverlayPNG(pics: string[], W = 1080, H = 1920): Promise<Buffer> {
     const items = pics.slice(0, 10);
     const n = items.length;
-    const cols = n <= 4 ? n : 5;
-    const rows = Math.ceil(n / cols);
+    const rows = Math.ceil(n / 5);
+    const cols = Math.ceil(n / rows); // filas balanceadas (7 → 4+3, no 5+2)
     const bandH = Math.round(H * (rows > 1 ? 0.44 : 0.32));
     const bandY = H - bandH;
     const pad = Math.round(W * 0.018);
     const cellW = Math.floor((W - pad) / cols) - pad;
     const cellH = Math.floor((bandH - pad) / rows) - pad;
     const inset = Math.round(cellW * 0.05);
+    // Rect de cada celda, con CADA FILA centrada horizontalmente (la última no queda pegada).
+    const rect = (i: number) => {
+      const row = Math.floor(i / cols);
+      const inRow = Math.min(cols, n - row * cols);
+      const startX = Math.round((W - (inRow * cellW + (inRow - 1) * pad)) / 2);
+      const x = startX + (i - row * cols) * (cellW + pad);
+      const y = bandY + pad + row * (cellH + pad);
+      return { x, y };
+    };
     let cards = '';
     for (let i = 0; i < n; i++) {
-      const col = i % cols, row = Math.floor(i / cols);
-      const x = pad + col * (cellW + pad) + inset, y = bandY + pad + row * (cellH + pad) + inset;
-      const w = cellW - inset * 2, h = cellH - inset * 2;
+      const { x: rx, y: ry } = rect(i);
+      const x = rx + inset, y = ry + inset, w = cellW - inset * 2, h = cellH - inset * 2;
       cards += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.round(w * 0.08)}" fill="#ffffff"/>`;
     }
     const svg = Buffer.from(
@@ -492,9 +500,8 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
     );
     const layers: sharp.OverlayOptions[] = [{ input: svg, top: 0, left: 0 }];
     for (let i = 0; i < n; i++) {
-      const col = i % cols, row = Math.floor(i / cols);
-      const cx = pad + col * (cellW + pad) + inset, cy = bandY + pad + row * (cellH + pad) + inset;
-      const w = cellW - inset * 2, h = cellH - inset * 2, ip = Math.round(w * 0.08);
+      const { x: rx, y: ry } = rect(i);
+      const cx = rx + inset, cy = ry + inset, w = cellW - inset * 2, h = cellH - inset * 2, ip = Math.round(w * 0.08);
       const cell = await sharp(await this.toBuf(items[i])).resize(w - ip * 2, h - ip * 2, { fit: 'inside' }).png().toBuffer();
       const cm = await sharp(cell).metadata();
       const left = cx + ip + Math.round(((w - ip * 2) - (cm.width ?? 0)) / 2);
