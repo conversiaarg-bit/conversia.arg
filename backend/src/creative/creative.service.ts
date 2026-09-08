@@ -678,12 +678,15 @@ Generá el paquete y devolvé SOLO este JSON (todo en español AR, salvo las sec
     // 1) FONDO SOLO (gpt-image-1 no tiene "negative", lo plegamos en el prompt).
     const bgPrompt = `${CreativeService.SCENE_BG[bgKey]}, clean composition, advertising style, ultra realistic, 4k, depth of field, professional lighting, high detail, EMPTY scene with a clear open central area for a product to be placed later. ABSOLUTELY NO product, no object, no item, no packaging, no bag, no text, no logo, no watermark.`;
     const bg = await this.imageProvider.generate({ prompt: bgPrompt, format, quality: input.quality ?? 'standard' });
-    // 2) Recortar cada producto (birefnet) → buffer PNG transparente.
-    const cutouts = await Promise.all(pics.map(async p => this.toBuf((await this.removeBackground(p)).imageUrl)));
+    const backgroundUrl = await this.persist(bg.dataUrl, 'image');
+    // 2) Recortar cada producto (birefnet) → PNG transparente (se persiste y se reusa el buffer).
+    const cutoutUrls = await Promise.all(pics.map(async p => (await this.removeBackground(p)).imageUrl));
+    const cutouts = await Promise.all(cutoutUrls.map(u => this.toBuf(u)));
     // 3) Componer producto(s) real(es) sobre el fondo con sombra suave.
     const composed = await this.compositeOnBackground(bg.dataUrl, cutouts, format);
     const imageUrl = await this.persist(composed, 'image');
-    return { imageUrl, model: bg.model };
+    // Devuelve los pasos intermedios para mostrarlos en los nodos (recorte + fondo).
+    return { imageUrl, backgroundUrl, cutoutUrls, model: bg.model };
   }
 
   // Compone cutouts PNG sobre un fondo generado, centrados, con sombra de contacto (sharp).

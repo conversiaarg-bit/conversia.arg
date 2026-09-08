@@ -11,6 +11,10 @@ export interface Pipe {
   script?: string;
   imageUrl?: string;
   videoUrl?: string;
+  // Pipeline de IMAGEN (producto exacto): recorte → fondo → composición
+  cutoutUrl?: string;
+  backgroundUrl?: string;
+  sceneUrl?: string;
 }
 
 type GroupKey = 'entrada' | 'generacion' | 'salida';
@@ -34,7 +38,7 @@ async function dlNode(url: string, name: string) {
 }
 
 // Pipeline fijo: Input → OpenAI (prompts + imagen) → Seedance (1 video) → Salida.
-export default function CampaignCanvas({ pipe, running, onRun, cost, productImages, productDesc, characterDesc, onCancel, onTemplates }: {
+export default function CampaignCanvas({ pipe, running, onRun, cost, productImages, productDesc, characterDesc, onCancel, onTemplates, mode = 'video' }: {
   pipe: Pipe;
   running: boolean;
   onRun: () => void;
@@ -44,6 +48,7 @@ export default function CampaignCanvas({ pipe, running, onRun, cost, productImag
   characterDesc?: string;
   onCancel?: () => void;
   onTemplates?: () => void;
+  mode?: 'video' | 'image';
 }) {
   const [zoom, setZoom] = useState(0.7);
   const [pan, setPan] = useState({ x: 30, y: 20 });
@@ -53,35 +58,47 @@ export default function CampaignCanvas({ pipe, running, onRun, cost, productImag
   const nodeDrag = useRef<{ id: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
 
   const st = (filled: unknown): SceneStatus => filled ? 'done' : (running ? 'running' : 'idle');
-  const done = !!pipe.videoUrl;
+  const done = mode === 'image' ? !!pipe.sceneUrl : !!pipe.videoUrl;
 
-  // ── Layout: Input (col A) → Prompts (col B) → Personaje (col C) → Video (col D)
+  // ── Layout: Input (col A) → col B → col C → Salida (col D)
   const A = 40, B = 360, Cx = 700, D = 1040, GAP = 250;
   const nodes: GNode[] = [];
-  // Input
-  nodes.push({ id: 'product', x: A, y: 40, group: 'entrada', emoji: '📦', title: 'Imágenes de producto', model: 'Input', badges: productImages?.length ? [`${productImages.length} img`] : ['imagen'], status: 'done', poster: productImages?.[0], text: productImages?.length ? undefined : 'Subí fotos del producto' });
-  nodes.push({ id: 'pdesc', x: A, y: 40 + GAP, group: 'entrada', emoji: '📝', title: 'Descripción de producto', model: 'Static', badges: [], status: 'done', text: productDesc || 'Tu producto' });
-  nodes.push({ id: 'cdesc', x: A, y: 40 + GAP * 2, group: 'entrada', emoji: '🧑', title: 'Descripción de personaje', model: 'Static', badges: [], status: 'done', text: characterDesc || 'Persona UGC (avatar)' });
-  // Generación — Product Analyzer (visión) extrae la verdad literal del producto
-  nodes.push({ id: 'analyzer', x: B, y: 40, group: 'generacion', emoji: '🔍', title: 'Analizador de producto', model: 'GPT-4o visión', badges: ['OpenAI'], status: st(pipe.productData), text: pipe.productData ? JSON.stringify(pipe.productData, null, 1) : 'Lee la imagen y extrae marcas/colores/etiquetas exactas' });
-  // Generación — prompts (OpenAI)
-  nodes.push({ id: 'master', x: B, y: 40 + GAP, group: 'generacion', emoji: '✨', title: 'Prompt maestro', model: 'GPT-4o-mini', badges: ['OpenAI'], status: st(pipe.imagePrompt), text: pipe.imagePrompt ? 'Prompts de imagen y video generados ✓' : 'OpenAI arma el prompt de imagen y de video' });
-  nodes.push({ id: 'imgprompt', x: B, y: 40 + GAP * 2, group: 'generacion', emoji: '🖼️', title: 'Prompt de imagen', model: 'OpenAI', badges: ['prompt'], status: st(pipe.imagePrompt), text: pipe.imagePrompt || 'Prompt de la imagen (se genera)' });
-  nodes.push({ id: 'vidprompt', x: B, y: 40 + GAP * 3, group: 'generacion', emoji: '🎬', title: 'Prompt de video', model: 'OpenAI', badges: ['prompt'], status: st(pipe.videoPrompt), text: pipe.videoPrompt || 'Prompt del video (se genera)' });
-  // Generación — imagen del personaje (OpenAI)
-  nodes.push({ id: 'chargen', x: Cx, y: 40 + GAP * 1.5, group: 'generacion', emoji: '🧑‍🎤', title: 'Generación de personaje', model: 'gpt-image-1', badges: ['imagen: OpenAI'], status: st(pipe.imageUrl), poster: pipe.imageUrl, text: pipe.imageUrl ? undefined : 'La persona con el producto exacto' });
-  // Salida — video (Seedance)
-  nodes.push({ id: 'video', x: D, y: 40 + GAP * 1.5, group: 'salida', emoji: '🎥', title: 'Video final', model: 'Seedance 1.5', badges: ['video: Seedance', '9:16'], status: st(pipe.videoUrl), media: pipe.videoUrl, text: pipe.videoUrl ? undefined : 'El video (Seedance usa el prompt de video)' });
+  let edges: [string, string][] = [];
+  if (mode === 'image') {
+    // Pipeline IMAGEN producto-exacto: Input → (Recorte + Fondo) → Composición → Imagen final
+    nodes.push({ id: 'product', x: A, y: 40 + GAP * 0.5, group: 'entrada', emoji: '📦', title: 'Imágenes de producto', model: 'Input', badges: productImages?.length ? [`${productImages.length} img`] : ['imagen'], status: 'done', poster: productImages?.[0], text: productImages?.length ? undefined : 'Subí fotos del producto' });
+    nodes.push({ id: 'pdesc', x: A, y: 40 + GAP * 1.7, group: 'entrada', emoji: '📝', title: 'Categoría / producto', model: 'Static', badges: [], status: 'done', text: productDesc || 'Tu producto (define el estilo del fondo)' });
+    nodes.push({ id: 'cutout', x: B, y: 40, group: 'generacion', emoji: '✂️', title: 'Recorte del producto', model: 'birefnet (fal)', badges: ['PNG'], status: st(pipe.cutoutUrl), poster: pipe.cutoutUrl, text: pipe.cutoutUrl ? undefined : 'Recorta el producto REAL (fondo transparente)' });
+    nodes.push({ id: 'bg', x: B, y: 40 + GAP * 1.4, group: 'generacion', emoji: '🌆', title: 'Fondo publicitario', model: 'gpt-image-1', badges: ['solo fondo'], status: st(pipe.backgroundUrl), poster: pipe.backgroundUrl, text: pipe.backgroundUrl ? undefined : 'Genera SOLO el fondo (sin producto)' });
+    nodes.push({ id: 'compose', x: Cx, y: 40 + GAP * 0.7, group: 'generacion', emoji: '🧩', title: 'Composición', model: 'sharp', badges: ['producto exacto'], status: st(pipe.sceneUrl), poster: pipe.sceneUrl, text: pipe.sceneUrl ? undefined : 'Pega el producto real sobre el fondo + sombra' });
+    nodes.push({ id: 'scene', x: D, y: 40 + GAP * 0.7, group: 'salida', emoji: '🖼️', title: 'Imagen final', model: 'PNG', badges: ['9:16'], status: st(pipe.sceneUrl), poster: pipe.sceneUrl, text: pipe.sceneUrl ? undefined : 'El creativo listo (producto idéntico)' });
+    edges = [['product', 'cutout'], ['pdesc', 'bg'], ['cutout', 'compose'], ['bg', 'compose'], ['compose', 'scene']];
+  } else {
+    // Input
+    nodes.push({ id: 'product', x: A, y: 40, group: 'entrada', emoji: '📦', title: 'Imágenes de producto', model: 'Input', badges: productImages?.length ? [`${productImages.length} img`] : ['imagen'], status: 'done', poster: productImages?.[0], text: productImages?.length ? undefined : 'Subí fotos del producto' });
+    nodes.push({ id: 'pdesc', x: A, y: 40 + GAP, group: 'entrada', emoji: '📝', title: 'Descripción de producto', model: 'Static', badges: [], status: 'done', text: productDesc || 'Tu producto' });
+    nodes.push({ id: 'cdesc', x: A, y: 40 + GAP * 2, group: 'entrada', emoji: '🧑', title: 'Descripción de personaje', model: 'Static', badges: [], status: 'done', text: characterDesc || 'Persona UGC (avatar)' });
+    // Generación — Product Analyzer (visión) extrae la verdad literal del producto
+    nodes.push({ id: 'analyzer', x: B, y: 40, group: 'generacion', emoji: '🔍', title: 'Analizador de producto', model: 'GPT-4o visión', badges: ['OpenAI'], status: st(pipe.productData), text: pipe.productData ? JSON.stringify(pipe.productData, null, 1) : 'Lee la imagen y extrae marcas/colores/etiquetas exactas' });
+    // Generación — prompts (OpenAI)
+    nodes.push({ id: 'master', x: B, y: 40 + GAP, group: 'generacion', emoji: '✨', title: 'Prompt maestro', model: 'GPT-4o-mini', badges: ['OpenAI'], status: st(pipe.imagePrompt), text: pipe.imagePrompt ? 'Prompts de imagen y video generados ✓' : 'OpenAI arma el prompt de imagen y de video' });
+    nodes.push({ id: 'imgprompt', x: B, y: 40 + GAP * 2, group: 'generacion', emoji: '🖼️', title: 'Prompt de imagen', model: 'OpenAI', badges: ['prompt'], status: st(pipe.imagePrompt), text: pipe.imagePrompt || 'Prompt de la imagen (se genera)' });
+    nodes.push({ id: 'vidprompt', x: B, y: 40 + GAP * 3, group: 'generacion', emoji: '🎬', title: 'Prompt de video', model: 'OpenAI', badges: ['prompt'], status: st(pipe.videoPrompt), text: pipe.videoPrompt || 'Prompt del video (se genera)' });
+    // Generación — imagen del personaje (OpenAI)
+    nodes.push({ id: 'chargen', x: Cx, y: 40 + GAP * 1.5, group: 'generacion', emoji: '🧑‍🎤', title: 'Generación de personaje', model: 'gpt-image-1', badges: ['imagen: OpenAI'], status: st(pipe.imageUrl), poster: pipe.imageUrl, text: pipe.imageUrl ? undefined : 'La persona con el producto exacto' });
+    // Salida — video (Seedance)
+    nodes.push({ id: 'video', x: D, y: 40 + GAP * 1.5, group: 'salida', emoji: '🎥', title: 'Video final', model: 'Seedance 1.5', badges: ['video: Seedance', '9:16'], status: st(pipe.videoUrl), media: pipe.videoUrl, text: pipe.videoUrl ? undefined : 'El video (Seedance usa el prompt de video)' });
+    edges = [
+      ['product', 'analyzer'], ['analyzer', 'master'], ['pdesc', 'master'], ['cdesc', 'master'],
+      ['master', 'imgprompt'], ['master', 'vidprompt'],
+      ['imgprompt', 'chargen'], ['product', 'chargen'],
+      ['vidprompt', 'video'], ['chargen', 'video'],
+    ];
+  }
 
   nodes.forEach(n => { const p = positions[n.id]; if (p) { n.x = p.x; n.y = p.y; } });
 
   const byId = (id: string) => nodes.find(n => n.id === id)!;
-  const edges: [string, string][] = [
-    ['product', 'analyzer'], ['analyzer', 'master'], ['pdesc', 'master'], ['cdesc', 'master'],
-    ['master', 'imgprompt'], ['master', 'vidprompt'],
-    ['imgprompt', 'chargen'], ['product', 'chargen'],
-    ['vidprompt', 'video'], ['chargen', 'video'],
-  ];
 
   const groupRects = GROUPS.map(g => {
     const ns = nodes.filter(n => n.group === g.key);
@@ -118,7 +135,9 @@ export default function CampaignCanvas({ pipe, running, onRun, cost, productImag
       {/* Toolbar superior */}
       <div style={{ position: 'absolute', top: 12, left: 12, right: 12, zIndex: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', pointerEvents: 'none' }}>
         <div style={{ background: '#0f0f1a', border: `1px solid ${C.border}`, borderRadius: 10, padding: '6px 12px', fontSize: 12, color: C.textMuted, pointerEvents: 'auto' }}>
-          Pipeline · <b style={{ color: C.text }}>1 video</b> · imagen OpenAI + video Seedance · <b style={{ color: C.accent }}>{cost} créditos</b>
+          {mode === 'image'
+            ? <>Pipeline · <b style={{ color: C.text }}>1 imagen</b> · recorte + fondo + composición · <b style={{ color: C.accent }}>{cost} créditos</b></>
+            : <>Pipeline · <b style={{ color: C.text }}>1 video</b> · imagen OpenAI + video Seedance · <b style={{ color: C.accent }}>{cost} créditos</b></>}
         </div>
         <div style={{ display: 'flex', gap: 8, pointerEvents: 'auto', alignItems: 'center' }}>
           {running ? (
@@ -126,12 +145,14 @@ export default function CampaignCanvas({ pipe, running, onRun, cost, productImag
               <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: '#0f0f1a', border: `1px solid ${C.amber}66`, borderRadius: 10, padding: '7px 13px', fontSize: 12.5, color: C.text }}>
                 <span style={{ width: 13, height: 13, borderRadius: '50%', border: `2px solid ${C.surface2}`, borderTopColor: C.amber, display: 'inline-block', animation: 'cvspin 1s linear infinite' }} />
                 <b>Generando…</b>
-                <span style={{ color: C.textMuted }}>{pipe.imageUrl ? 'video' : pipe.imagePrompt ? 'imagen' : 'prompts'}</span>
+                <span style={{ color: C.textMuted }}>{mode === 'image'
+                  ? (pipe.sceneUrl ? 'listo' : pipe.backgroundUrl ? 'composición' : 'recorte + fondo')
+                  : (pipe.imageUrl ? 'video' : pipe.imagePrompt ? 'imagen' : 'prompts')}</span>
               </div>
               {onCancel && <button onClick={onCancel} style={{ ...tbtn, borderColor: C.red, color: C.red }}>✕ Cancelar</button>}
             </>
           ) : (
-            <button onClick={onRun} style={{ ...tbtn, background: C.accent, color: '#fff', border: 'none', fontWeight: 700 }}>{done ? '↻ Regenerar video' : '▶ Generar video'}</button>
+            <button onClick={onRun} style={{ ...tbtn, background: C.accent, color: '#fff', border: 'none', fontWeight: 700 }}>{done ? (mode === 'image' ? '↻ Regenerar imagen' : '↻ Regenerar video') : (mode === 'image' ? '▶ Generar imagen' : '▶ Generar video')}</button>
           )}
         </div>
         <style>{`@keyframes cvspin{to{transform:rotate(360deg)}}@keyframes cvbar{0%{left:-42%}100%{left:100%}}@keyframes cvdash{to{stroke-dashoffset:-16}}`}</style>

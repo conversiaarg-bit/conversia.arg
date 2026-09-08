@@ -68,6 +68,8 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
   const [comboImage, setComboImage] = useState<string | undefined>(); // imagen combo generada (todos los productos juntos)
   const [comboLoading, setComboLoading] = useState(false);
   const [pipe, setPipe] = useState<Pipe>({}); // pipeline único: prompts + imagen + 1 video
+  const [mode, setMode] = useState<'video' | 'image'>('video'); // qué pipeline muestra el canvas
+  const [scenePipe, setScenePipe] = useState<Pipe>({}); // pipeline de IMAGEN (recorte+fondo+composición)
   const [videoDur, setVideoDur] = useState<'5' | '10'>('5');
   const [pkg, setPkg] = useState<any>(null);   // paquete de ads (hooks/copy/variaciones)
   const [pkgLoading, setPkgLoading] = useState(false);
@@ -150,6 +152,27 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
       setCredits(res.credits);
       setPipe({ productData: (res as any).productData, imagePrompt: res.imagePrompt, videoPrompt: res.videoPrompt, script: res.script, imageUrl: res.imageUrl, videoUrl: res.videoUrl || undefined });
       pushMsg('copilot', res.videoUrl ? '🎥 Video listo — descargalo desde el nodo Video.' : '🖼️ Imagen lista (el video queda pendiente hasta activar Seedance).');
+    } catch (e: any) {
+      const sc = e?.response?.data?.message === 'SIN_CREDITOS';
+      setErr(sc ? 'Te quedaste sin créditos.' : 'Falló la generación (no se descontaron créditos).');
+      pushMsg('copilot', sc ? '🪫 Te quedaste sin créditos.' : 'Falló la generación (no se descontaron créditos). Reintentá.');
+    } finally { setRunning(false); }
+  };
+
+  // ── PIPELINE IMAGEN: recorte real + fondo generado + composición (producto EXACTO) ──
+  const imgSceneCost = costs?.image_standard ?? costs?.imageRegen ?? 3;
+  const runImageScene = async () => {
+    const raw = (productImages.length ? productImages : [comboImage || imageBase64]).filter(Boolean) as string[];
+    if (!raw.length) { pushMsg('copilot', 'Primero subí al menos una foto del producto.'); return; }
+    const srcs = await Promise.all(raw.map(i => shrink(i)));
+    if (!window.confirm(`Generar la imagen usará ${imgSceneCost} créditos (recorte + fondo + composición). Tenés ${credits}. ¿Continuar?`)) return;
+    setRunning(true); setErr(null); setScenePipe({});
+    pushMsg('copilot', 'Recortando el producto real, generando el fondo publicitario y componiendo (el producto no se regenera)…');
+    try {
+      const res = await creativeApi.composeScene({ product: { name: name || 'Producto' }, referenceImages: srcs, format });
+      setScenePipe({ cutoutUrl: res.cutoutUrls?.[0], backgroundUrl: res.backgroundUrl, sceneUrl: res.imageUrl });
+      setCredits(res.credits);
+      pushMsg('copilot', '🖼️ Imagen lista — descargala desde el nodo "Imagen final". El producto quedó idéntico.');
     } catch (e: any) {
       const sc = e?.response?.data?.message === 'SIN_CREDITOS';
       setErr(sc ? 'Te quedaste sin créditos.' : 'Falló la generación (no se descontaron créditos).');
@@ -517,15 +540,23 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
 
       {err && <div style={{ background: C.redDim, border: `1px solid ${C.red}`, color: C.red, borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 12 }}>⚠️ {err}</div>}
 
+      {/* Selector de pipeline: Video UGC (persona) o Imagen (producto exacto) */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 4, width: 'fit-content' }}>
+        {([['video', '🎬 Video UGC'], ['image', '🖼️ Imagen (producto exacto)']] as const).map(([k, lbl]) => (
+          <button key={k} onClick={() => setMode(k)} disabled={running} style={{ padding: '8px 14px', borderRadius: 9, border: 'none', cursor: running ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 700, background: mode === k ? C.accent : 'transparent', color: mode === k ? '#fff' : C.textMuted }}>{lbl}</button>
+        ))}
+      </div>
+
       {/* Canvas de nodos + Copiloto (siempre visible) */}
       <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }} className="canvas-copilot">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <CampaignCanvas pipe={pipe} running={running} onRun={runOneShot} cost={oneShotCost}
+          <CampaignCanvas mode={mode} pipe={mode === 'image' ? scenePipe : pipe} running={running}
+            onRun={mode === 'image' ? runImageScene : runOneShot} cost={mode === 'image' ? imgSceneCost : oneShotCost}
             productImages={comboImage ? [comboImage] : productImages} productDesc={name || 'Tu producto'}
             characterDesc={selectedAvatar ? 'Avatar elegido' : (avatar || 'Persona UGC (sintética)')}
             onCancel={cancelRun} onTemplates={() => { loadAvatars(); setShowAvatars(true); }} />
         </div>
-        <CopilotPanel messages={messages} running={running || planning} planned={true} onGenerate={runOneShot} onSend={handleCopilot} onAttach={onCopilotAttach} />
+        <CopilotPanel messages={messages} running={running || planning} planned={true} onGenerate={mode === 'image' ? runImageScene : runOneShot} onSend={handleCopilot} onAttach={onCopilotAttach} />
       </div>
 
       {/* Galería de Plantillas / Avatares */}
