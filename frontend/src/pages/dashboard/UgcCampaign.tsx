@@ -238,6 +238,37 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     } finally { setComboLoading(false); }
   };
 
+  // Combo PIXEL-PERFECT: recorta cada producto (fal birefnet) y los compone sobre fondo blanco
+  // en un canvas del navegador → los productos quedan EXACTOS (no regenerados).
+  const buildCleanCombo = async () => {
+    if (productImages.length < 1) return;
+    setComboLoading(true);
+    pushMsg('copilot', '✂️ Recortando cada producto y armando el combo (fondo blanco, productos exactos)…');
+    try {
+      const clean = await Promise.all(productImages.map(img => creativeApi.removeBg(img).then(r => r.imageUrl).catch(() => img)));
+      const loadImg = (src: string) => new Promise<HTMLImageElement>((res, rej) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = rej; im.src = src; });
+      const imgs = await Promise.all(clean.map(loadImg));
+      const W = 1080, H = 1350;
+      const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('canvas');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+      const n = imgs.length, cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+      const cw = W / cols, ch = H / rows, pad = cw * 0.10;
+      imgs.forEach((im, i) => {
+        const cx = (i % cols) * cw, cy = Math.floor(i / cols) * ch;
+        const scale = Math.min((cw - pad * 2) / im.width, (ch - pad * 2) / im.height);
+        const dw = im.width * scale, dh = im.height * scale;
+        ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.18)'; ctx.shadowBlur = 22; ctx.shadowOffsetY = 10;
+        ctx.drawImage(im, cx + (cw - dw) / 2, cy + (ch - dh) / 2, dw, dh); ctx.restore();
+      });
+      const dataUrl = canvas.toDataURL('image/png');
+      setComboImage(dataUrl); applyNewProduct(dataUrl);
+      pushMsg('copilot', '✂️ Combo listo con los productos recortados (exactos, fondo blanco). Ya es la imagen de producto — generá cuando quieras.');
+    } catch {
+      pushMsg('copilot', 'No pude armar el combo recortado. Usá fotos de productos individuales (uno por foto), no un collage.');
+    } finally { setComboLoading(false); }
+  };
+
   // Paquete de ads: hooks + copy + guion + 3 variaciones (no genera video, solo texto — casi gratis)
   const genPkg = async () => {
     if (!name && productImages.length === 0) { pushMsg('copilot', 'Primero poné el nombre del producto o subí una foto.'); return; }
@@ -374,9 +405,14 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
           ))}
           <button onClick={() => fileRef.current?.click()} style={{ width: 40, height: 40, borderRadius: 8, border: `1.5px dashed ${C.borderBright}`, background: C.surface, color: C.textMuted, fontSize: 18, cursor: 'pointer' }} title="Agregar más imágenes al combo">+</button>
           {productImages.length >= 2 && (
-            <button onClick={genCombo} disabled={comboLoading} style={{ marginLeft: 4, padding: '7px 12px', borderRadius: 9, border: 'none', background: comboImage ? C.surface2 : C.grad, color: comboImage ? C.text : '#fff', fontSize: 12, fontWeight: 700, cursor: comboLoading ? 'wait' : 'pointer', opacity: comboLoading ? 0.6 : 1 }}>
-              {comboLoading ? 'Armando combo…' : comboImage ? '✓ Combo listo · rehacer' : '🧩 Generar combo'}
-            </button>
+            <>
+              <button onClick={buildCleanCombo} disabled={comboLoading} title="Recorta cada producto (exacto) y los compone sobre fondo blanco — pixel-perfect" style={{ marginLeft: 4, padding: '7px 12px', borderRadius: 9, border: 'none', background: C.grad, color: '#fff', fontSize: 12, fontWeight: 700, cursor: comboLoading ? 'wait' : 'pointer', opacity: comboLoading ? 0.6 : 1 }}>
+                {comboLoading ? 'Armando…' : '✂️ Combo recortado (exacto)'}
+              </button>
+              <button onClick={genCombo} disabled={comboLoading} title="Combo generado por IA (escena/fondo lindo, puede variar un poco el producto)" style={{ padding: '7px 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 12, fontWeight: 700, cursor: comboLoading ? 'wait' : 'pointer', opacity: comboLoading ? 0.6 : 1 }}>
+                🧩 Combo IA
+              </button>
+            </>
           )}
           {comboImage && <span style={{ fontSize: 11, color: C.accent }}>usando imagen combo ✓</span>}
         </div>
