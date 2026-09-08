@@ -89,6 +89,55 @@ async function downloadImage(url: string, name: string) {
   } catch { window.open(url, '_blank'); }
 }
 
+// Render de un AD por CANVAS: productos REALES (pixel-perfect) + texto/precio con fuentes reales.
+// 3 estilos (oferta/premium/social). NO usa IA → los productos quedan idénticos.
+async function renderOfferTemplate(srcs: string[], p: ProductInfo, format: Fmt, style: 'oferta' | 'premium' | 'social'): Promise<string> {
+  const toData = async (u: string) => { if (u.startsWith('data:')) return u; try { const rb = await fetch(u); const bl = await rb.blob(); return await new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(bl); }); } catch { return u; } };
+  const load = async (u: string) => { const d = await toData(u); return new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = d; }); };
+  const imgs = await Promise.all(srcs.filter(Boolean).map(load));
+  const [W, H] = format === '1:1' ? [1080, 1080] : format === '4:5' ? [1080, 1350] : [1080, 1920];
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d'); if (!ctx) throw new Error('canvas');
+  const TH = {
+    oferta:  { bg: ['#f3f4f6', '#e5e7eb'], ribbonBg: '#dc2626', ribbonTx: '#ffffff', price: '#111827', old: '#9ca3af', feat: '#374151', ctaBg: '#16a34a', ctaTx: '#ffffff', ribbon: p.discount ? `¡${p.discount} OFF!` : '¡OFERTA ESPECIAL!' },
+    premium: { bg: ['#0f172a', '#1e293b'], ribbonBg: '#d4af37', ribbonTx: '#111827', price: '#ffffff', old: '#94a3b8', feat: '#e2e8f0', ctaBg: '#d4af37', ctaTx: '#111827', ribbon: 'COMBO PREMIUM' },
+    social:  { bg: ['#7c3aed', '#db2777'], ribbonBg: '#ffffff', ribbonTx: '#7c3aed', price: '#ffffff', old: '#f9a8d4', feat: '#fce7f3', ctaBg: '#ffffff', ctaTx: '#db2777', ribbon: '¡COMBO IRRESISTIBLE!' },
+  }[style];
+  const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, TH.bg[0]); bg.addColorStop(1, TH.bg[1]);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const cx = W / 2;
+  const rr = (x: number, y: number, w: number, h: number, r: number) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  let y = H * 0.06;
+  const ribbon = TH.ribbon.toUpperCase();
+  ctx.font = `800 ${Math.round(W * 0.055)}px Arial`;
+  const rw = ctx.measureText(ribbon).width + W * 0.09;
+  ctx.fillStyle = TH.ribbonBg; rr(cx - rw / 2, y, rw, W * 0.1, 18); ctx.fill();
+  ctx.fillStyle = TH.ribbonTx; ctx.fillText(ribbon, cx, y + W * 0.05);
+  y += W * 0.1 + H * 0.02;
+  if (p.price) {
+    if (p.oldPrice) { ctx.font = `700 ${Math.round(W * 0.05)}px Arial`; ctx.fillStyle = TH.old; const op = `$${String(p.oldPrice).replace(/\$/g, '')}`; ctx.fillText(op, cx, y + W * 0.03); const ow = ctx.measureText(op).width; ctx.strokeStyle = TH.old; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx - ow / 2, y + W * 0.03); ctx.lineTo(cx + ow / 2, y + W * 0.03); ctx.stroke(); y += W * 0.06; }
+    ctx.font = `900 ${Math.round(W * 0.13)}px Arial`; ctx.fillStyle = TH.price; ctx.fillText(`$${String(p.price).replace(/\$/g, '')}`, cx, y + W * 0.07);
+    y += W * 0.14 + H * 0.01;
+  }
+  const areaTop = y, areaH = H * 0.9 - y - H * 0.12, areaW = W * 0.92, areaX = (W - areaW) / 2;
+  const n = imgs.length, cols = n === 1 ? 1 : Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+  const cw2 = areaW / cols, ch2 = areaH / rows, pad = cw2 * 0.08;
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 12;
+  imgs.forEach((im, i) => { const gx = areaX + (i % cols) * cw2, gy = areaTop + Math.floor(i / cols) * ch2; const sc = Math.min((cw2 - pad * 2) / im.width, (ch2 - pad * 2) / im.height); const dw = im.width * sc, dh = im.height * sc; ctx.drawImage(im, gx + (cw2 - dw) / 2, gy + (ch2 - dh) / 2, dw, dh); });
+  ctx.restore();
+  const feats = (p.features ?? []).slice(0, 3);
+  let fy = areaTop + areaH + H * 0.015;
+  ctx.font = `600 ${Math.round(W * 0.032)}px Arial`; ctx.fillStyle = TH.feat;
+  feats.forEach(f => { ctx.fillText(`✓ ${f}`, cx, fy); fy += W * 0.05; });
+  const cta = (p.cta || '¡Comprá ahora!').toUpperCase();
+  ctx.font = `800 ${Math.round(W * 0.045)}px Arial`;
+  const cw = ctx.measureText(cta).width + W * 0.12, chb = W * 0.11, cyb = H * 0.9;
+  ctx.fillStyle = TH.ctaBg; rr(cx - cw / 2, cyb, cw, chb, 20); ctx.fill();
+  ctx.fillStyle = TH.ctaTx; ctx.fillText(cta, cx, cyb + chb / 2);
+  return cv.toDataURL('image/png');
+}
+
 // Cache EN MEMORIA (sobrevive navegación dentro de la app; no se pierde el video al volver).
 const studioCache: { s?: StudioState; view?: 'launcher' | 'studio' | 'campaign' | 'history'; step?: number; maxStep?: number } = {};
 const isUrl = (u?: string) => !!u && /^https?:\/\//.test(u);
@@ -191,12 +240,35 @@ export default function AICreativeStudio() {
     goto(4);
   });
 
+  // 3 diseños de PLANTILLA con los productos REALES (canvas, sin IA, sin créditos).
+  // Si no hay imágenes cargadas, cae en la IA (que genera desde texto).
+  const TPL_STYLES = [
+    { key: 'oferta', label: 'Oferta / Conversión', desc: 'Venta y urgencia' },
+    { key: 'premium', label: 'Premium', desc: 'Elegante / aspiracional' },
+    { key: 'social', label: 'Social Media', desc: 'Vibrante, scroll-stopper' },
+  ] as const;
   const genImages = (quality?: 'standard' | 'premium') => run('images', async () => {
+    const srcs: string[] = s.images?.length ? s.images : (s.imageBase64 ? [s.imageBase64] : []);
+    if (srcs.length) {
+      const variants = await Promise.all(TPL_STYLES.map(async st => ({
+        key: st.key, label: st.label, description: st.desc, prompt: '',
+        url: await renderOfferTemplate(srcs, s.product, s.format, st.key), model: 'template',
+      })));
+      patch({ variants });
+      return;
+    }
     const r = await creativeApi.images({ product: s.product, objective: s.objective, style: s.strategy?.chosenStyle || s.style, format: s.format, quality, referenceImage: s.imageBase64, referenceImages: s.images, brief: s.brief });
     patch({ variants: r.variants }); setCredits(r.credits);
   });
 
   const regenImage = (angleKey: string, quality?: 'standard' | 'premium') => run('image', async () => {
+    const srcs: string[] = s.images?.length ? s.images : (s.imageBase64 ? [s.imageBase64] : []);
+    if (srcs.length) {
+      const style = (['oferta', 'premium', 'social'].includes(angleKey) ? angleKey : 'oferta') as 'oferta' | 'premium' | 'social';
+      const url = await renderOfferTemplate(srcs, s.product, s.format, style);
+      patch({ variants: s.variants.map(v => v.key === angleKey ? { ...v, url, model: 'template' } : v) });
+      return;
+    }
     const r = await creativeApi.image({ product: s.product, objective: s.objective, style: s.strategy?.chosenStyle || s.style, format: s.format, angleKey, quality, referenceImage: s.imageBase64, referenceImages: s.images, brief: s.brief });
     setCredits(r.credits);
     patch({ variants: s.variants.map(v => v.key === angleKey ? r.variant : v) });
@@ -260,7 +332,7 @@ export default function AICreativeStudio() {
                 {step === 1 && <StepProducto s={s} patch={patch} patchProduct={patchProduct} onAnalyze={analyze} onNext={() => goto(2)} onAddImages={addImages} onRemoveImage={removeImage} />}
                 {step === 2 && <StepObjetivo s={s} setObjective={(o: string) => patch({ objective: o })} onBack={() => goto(1)} onNext={() => goto(3)} />}
                 {step === 3 && <StepEstilo s={s} setStyle={(st: string) => patch({ style: st })} onBack={() => goto(2)} onNext={s.strategy ? () => goto(4) : buildStrategyAndGo} nextLabel={s.strategy ? 'Ir a imagen →' : 'Crear estrategia →'} />}
-                {step === 4 && <StepImagen s={s} costs={costs} setFormat={(f: Fmt) => patch({ format: f })} setBrief={(b: string) => patch({ brief: b })} onGen={(q?: 'standard' | 'premium') => withConfirm(costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm(costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => patch({ selectedImage: v })} onDownload={(v: ImageVariant) => downloadImage(v.url, `creativo-${v.key}`)} onBack={() => goto(3)} onNext={() => goto(5)} />}
+                {step === 4 && <StepImagen s={s} costs={costs} setFormat={(f: Fmt) => patch({ format: f })} setBrief={(b: string) => patch({ brief: b })} onGen={(q?: 'standard' | 'premium') => withConfirm((s.images?.length || s.imageBase64) ? 0 : costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm((s.images?.length || s.imageBase64) ? 0 : costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => patch({ selectedImage: v })} onDownload={(v: ImageVariant) => downloadImage(v.url, `creativo-${v.key}`)} onBack={() => goto(3)} onNext={() => goto(5)} />}
                 {step === 5 && (() => {
                   const vqOpt = videoQualities.find(q => q.key === vq) ?? videoQualities[0];
                   return <StepVideo s={s} vqOptions={videoQualities} vq={vq} setVq={setVq} onGen={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar video ${d}s (${vqOpt.label})`, () => genVideo(d))} onUGC={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar UGC ${d}s (${vqOpt.label})`, () => genUGC(d))} onBack={() => goto(4)} onNext={() => goto(6)} />;
@@ -717,7 +789,7 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
     finally { setTplLoading(false); }
   };
   return (
-    <StepShell title="Generá la imagen" subtitle={s.strategy?.concept ? `Concepto: ${s.strategy.concept}` : 'La IA crea 3 variantes; elegí la que más te guste.'}>
+    <StepShell title="Generá la imagen" subtitle={(s.images?.length || s.imageBase64) ? 'Con tus fotos armamos 3 diseños con los PRODUCTOS REALES (sin modificarlos) + texto/precio. Gratis.' : 'La IA crea 3 variantes; elegí la que más te guste.'}>
       {/* Brief: qué imagen querés — texto libre o comandos "/" */}
       <div style={{ marginBottom: 16 }}>
         <label style={{ fontSize: 12, color: C.textMuted, display: 'block', marginBottom: 6 }}>¿Cómo querés la imagen? <span style={{ color: C.textDim }}>(texto libre o comandos <b style={{ color: C.accent }}>/</b>)</span></label>
@@ -784,7 +856,7 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
       {!has ? (
         <div style={{ display: 'grid', placeItems: 'center', padding: '48px 0', border: `1.5px dashed ${C.border}`, borderRadius: 16, background: C.surface }}>
           <div style={{ fontSize: 34 }}>🎨</div>
-          <Btn style={{ marginTop: 16 }} onClick={() => onGen(q)}>Generar 3 variantes</Btn>
+          <Btn style={{ marginTop: 16 }} onClick={() => onGen(q)}>{(s.images?.length || s.imageBase64) ? 'Generar 3 diseños (productos reales · gratis)' : 'Generar 3 variantes'}</Btn>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))', gap: 14 }}>
