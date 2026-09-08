@@ -138,6 +138,24 @@ async function renderOfferTemplate(srcs: string[], p: ProductInfo, format: Fmt, 
   return cv.toDataURL('image/png');
 }
 
+// Adapta una imagen a un formato de Meta Ads (9:16 / 4:5 / 1:1) con fondo desenfocado (sin IA).
+async function fitToFormat(src: string, format: Fmt): Promise<string> {
+  const toData = async (u: string) => { if (u.startsWith('data:')) return u; try { const rb = await fetch(u); const bl = await rb.blob(); return await new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(bl); }); } catch { return u; } };
+  const d = await toData(src);
+  const img: HTMLImageElement = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = d; });
+  const [W, H] = format === '1:1' ? [1080, 1080] : format === '4:5' ? [1080, 1350] : [1080, 1920];
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d'); if (!ctx) throw new Error('canvas');
+  // Fondo: la misma imagen en "cover" desenfocada (relleno lindo para los bordes)
+  const covS = Math.max(W / img.width, H / img.height);
+  ctx.save(); ctx.filter = 'blur(28px) brightness(0.9)'; ctx.drawImage(img, (W - img.width * covS) / 2, (H - img.height * covS) / 2, img.width * covS, img.height * covS); ctx.restore();
+  // Imagen completa (contain) centrada, con leve sombra
+  const cs = Math.min(W / img.width, H / img.height) * 0.96;
+  const dw = img.width * cs, dh = img.height * cs;
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 30; ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh); ctx.restore();
+  return cv.toDataURL('image/png');
+}
+
 // Combo LIMPIO (productos reales en grilla sobre fondo blanco, sin texto) — base para el video.
 async function renderCleanCombo(srcs: string[], format: Fmt): Promise<string> {
   const toData = async (u: string) => { if (u.startsWith('data:')) return u; try { const rb = await fetch(u); const bl = await rb.blob(); return await new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(bl); }); } catch { return u; } };
@@ -353,7 +371,7 @@ export default function AICreativeStudio() {
                 {step === 1 && <StepProducto s={s} patch={patch} patchProduct={patchProduct} onAnalyze={analyze} onNext={() => goto(2)} onAddImages={addImages} onRemoveImage={removeImage} />}
                 {step === 2 && <StepObjetivo s={s} setObjective={(o: string) => patch({ objective: o })} onBack={() => goto(1)} onNext={() => goto(3)} />}
                 {step === 3 && <StepEstilo s={s} setStyle={(st: string) => patch({ style: st })} onBack={() => goto(2)} onNext={s.strategy ? () => goto(4) : buildStrategyAndGo} nextLabel={s.strategy ? 'Ir a imagen →' : 'Crear estrategia →'} />}
-                {step === 4 && <StepImagen s={s} costs={costs} setFormat={(f: Fmt) => patch({ format: f })} setBrief={(b: string) => patch({ brief: b })} onGen={(q?: 'standard' | 'premium') => withConfirm((s.images?.length || s.imageBase64) ? 0 : costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm((s.images?.length || s.imageBase64) ? 0 : costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => patch({ selectedImage: v })} onDownload={(v: ImageVariant) => downloadImage(v.url, `creativo-${v.key}`)} onBack={() => goto(3)} onNext={() => goto(5)} />}
+                {step === 4 && <StepImagen s={s} costs={costs} patch={patch} setFormat={(f: Fmt) => patch({ format: f })} setBrief={(b: string) => patch({ brief: b })} onGen={(q?: 'standard' | 'premium') => withConfirm((s.images?.length || s.imageBase64) ? 0 : costs.imageVariantsSet, 'Generar 3 imágenes', () => genImages(q))} onRegen={(k: string, q?: 'standard' | 'premium') => withConfirm((s.images?.length || s.imageBase64) ? 0 : costs.imageRegen, 'Regenerar imagen', () => regenImage(k, q))} onPick={(v: ImageVariant) => { const m = v.key.match(/(9:16|4:5|1:1)$/); patch({ selectedImage: v, ...(m ? { format: m[1] as Fmt } : {}) }); }} onDownload={(v: ImageVariant) => downloadImage(v.url, `creativo-${v.key}`)} onBack={() => goto(3)} onNext={() => goto(5)} />}
                 {step === 5 && (() => {
                   const vqOpt = videoQualities.find(q => q.key === vq) ?? videoQualities[0];
                   return <StepVideo s={s} vqOptions={videoQualities} vq={vq} setVq={setVq} onGen={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar video ${d}s (${vqOpt.label})`, () => genVideo(d))} onUGC={(d: '5' | '10') => withConfirm(d === '10' ? vqOpt.credits10 : vqOpt.credits5, `Generar UGC ${d}s (${vqOpt.label})`, () => genUGC(d))} onBack={() => goto(4)} onNext={() => goto(6)} />;
@@ -738,7 +756,9 @@ function recommendCommands(s: any): string[] {
 }
 
 // ── PASO 4: Imagen ────────────────────────────────────────────────────────────
-function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload, onBack, onNext }: any) {
+function StepImagen({ s, patch, setFormat, setBrief, onGen, onRegen, onPick, onDownload, onBack, onNext }: any) {
+  const FMTS: Fmt[] = ['9:16', '4:5', '1:1'];
+  const FMT_LABEL: Record<string, string> = { '9:16': 'Reel / Stories', '4:5': 'Feed Instagram', '1:1': 'Feed / Facebook' };
   const has = s.variants.length > 0;
   const [hd, setHd] = useState(false);
   const q = hd ? 'premium' : undefined;
@@ -746,69 +766,29 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
   const p = s.product as ProductInfo;
   const productImg: string | undefined = s.imageBase64 || s.images?.[0];
 
-  // Plantilla de OFERTA por CANVAS: producto REAL (pixel-perfect) + texto/precio con fuentes
-  // reales (nítido, sin gibberish). NO usa IA para el texto → el producto queda idéntico.
-  const buildOfferTemplate = async () => {
-    const allImgs: string[] = (s.images?.length ? s.images : [productImg]).filter(Boolean);
-    if (!allImgs.length) return;
+  // Genera el creativo en los 3 FORMATOS de Meta Ads (9:16 / 4:5 / 1:1), sin IA ni créditos.
+  //  - 'own'      → tu imagen tal cual, adaptada a cada formato (fitToFormat).
+  //  - 'template' → plantilla de oferta con el/los producto(s) REAL(es) + precio/texto nítido.
+  // Cada formato queda como una tarjeta seleccionable/descargable.
+  const buildFormatSet = async (kind: 'own' | 'template') => {
+    const srcs: string[] = (s.images?.length ? s.images : [productImg]).filter(Boolean) as string[];
+    if (!srcs.length) return;
     setTplLoading(true);
     try {
-      // Cargar TODAS las imágenes como dataURL (fetch→blob) → el canvas NUNCA queda tainted.
-      const toData = async (u: string) => { if (u.startsWith('data:')) return u; try { const rb = await fetch(u); const bl = await rb.blob(); return await new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(bl); }); } catch { return u; } };
-      const load = async (u: string) => { const d = await toData(u); return new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = d; }); };
-      const imgs = await Promise.all(allImgs.map(load));
-      const [W, H] = s.format === '1:1' ? [1080, 1080] : s.format === '4:5' ? [1080, 1350] : [1080, 1920];
-      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-      const ctx = cv.getContext('2d'); if (!ctx) throw new Error('canvas');
-      // Fondo: gradiente suave claro
-      const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#f3f4f6'); bg.addColorStop(1, '#e5e7eb');
-      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-      const cx = W / 2;
-      const rr = (x: number, y: number, w: number, h: number, r: number) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
-      ctx.textAlign = 'center';
-      let y = H * 0.06;
-      // Ribbon de oferta
-      const ribbon = (p.discount ? `¡${p.discount} OFF!` : '¡OFERTA ESPECIAL!').toUpperCase();
-      ctx.font = `800 ${Math.round(W * 0.055)}px Arial`;
-      const rw = ctx.measureText(ribbon).width + W * 0.09;
-      ctx.fillStyle = '#dc2626'; rr(cx - rw / 2, y, rw, W * 0.1, 18); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.fillText(ribbon, cx, y + W * 0.05);
-      y += W * 0.1 + H * 0.02;
-      // Precio
-      if (p.price) {
-        if (p.oldPrice) { ctx.font = `700 ${Math.round(W * 0.05)}px Arial`; ctx.fillStyle = '#9ca3af'; const op = `$${String(p.oldPrice).replace(/\$/g, '')}`; ctx.fillText(op, cx, y + W * 0.03); const ow = ctx.measureText(op).width; ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx - ow / 2, y + W * 0.03); ctx.lineTo(cx + ow / 2, y + W * 0.03); ctx.stroke(); y += W * 0.06; }
-        ctx.font = `900 ${Math.round(W * 0.13)}px Arial`; ctx.fillStyle = '#111827'; ctx.fillText(`$${String(p.price).replace(/\$/g, '')}`, cx, y + W * 0.07);
-        y += W * 0.14 + H * 0.01;
-      }
-      // Producto(s) REAL(es), contain, con sombra. 1 → centrado; varios → grilla (combo).
-      const areaTop = y, areaH = H * 0.9 - y - H * 0.12, areaW = W * 0.92, areaX = (W - areaW) / 2;
-      const n = imgs.length;
-      const cols = n === 1 ? 1 : Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
-      const cw2 = areaW / cols, ch2 = areaH / rows, pad = cw2 * 0.08;
-      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 12;
-      imgs.forEach((im, i) => {
-        const gx = areaX + (i % cols) * cw2, gy = areaTop + Math.floor(i / cols) * ch2;
-        const sc = Math.min((cw2 - pad * 2) / im.width, (ch2 - pad * 2) / im.height);
-        const dw = im.width * sc, dh = im.height * sc;
-        ctx.drawImage(im, gx + (cw2 - dw) / 2, gy + (ch2 - dh) / 2, dw, dh);
-      });
-      ctx.restore();
-      // Beneficios (features) como líneas con check
-      const feats = (p.features ?? []).slice(0, 3);
-      let fy = areaTop + areaH + H * 0.015;
-      ctx.font = `600 ${Math.round(W * 0.032)}px Arial`; ctx.fillStyle = '#374151'; ctx.textBaseline = 'middle';
-      feats.forEach(f => { ctx.fillText(`✓ ${f}`, cx, fy); fy += W * 0.05; });
-      // CTA
-      const cta = (p.cta || '¡Comprá ahora!').toUpperCase();
-      ctx.font = `800 ${Math.round(W * 0.045)}px Arial`;
-      const cw = ctx.measureText(cta).width + W * 0.12; const ch = W * 0.11; const cyb = H * 0.9;
-      ctx.fillStyle = '#16a34a'; rr(cx - cw / 2, cyb, cw, ch, 20); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.fillText(cta, cx, cyb + ch / 2);
-      const url = cv.toDataURL('image/png');
-      onPick({ key: 'template', label: 'Plantilla de oferta', description: 'Producto real + texto perfecto (sin IA)', prompt: '', url, model: 'template' });
+      const variants = await Promise.all(FMTS.map(async f => ({
+        key: `${kind}-${f}`,
+        label: `${FMT_LABEL[f]} · ${f}`,
+        description: kind === 'own' ? 'Tu imagen adaptada' : 'Plantilla de oferta (producto real)',
+        prompt: '',
+        url: kind === 'own' ? await fitToFormat(srcs[0], f) : await renderOfferTemplate(srcs, p, f, 'oferta'),
+        model: kind,
+      })));
+      const cur = variants.find(v => v.key.endsWith(s.format)) ?? variants[0];
+      patch({ variants, selectedImage: cur });
     } catch { /* reintentar */ }
     finally { setTplLoading(false); }
   };
+  const fmtOf = (k: string): Fmt => k.endsWith('4:5') ? '4:5' : k.endsWith('1:1') ? '1:1' : k.endsWith('9:16') ? '9:16' : s.format;
   return (
     <StepShell title="Generá la imagen" subtitle={(s.images?.length || s.imageBase64) ? 'Con tus fotos armamos 3 diseños con los PRODUCTOS REALES (sin modificarlos) + texto/precio. Gratis.' : 'La IA crea 3 variantes; elegí la que más te guste.'}>
       {/* Brief: qué imagen querés — texto libre o comandos "/" */}
@@ -847,30 +827,17 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
         ))}
       </div>
 
-      {/* Usar la imagen propia SIN generar (0 créditos) */}
+      {/* Sin IA (0 créditos): tu imagen o una plantilla de oferta, generadas en LOS 3 FORMATOS de Meta */}
       {(s.imageBase64 || s.images?.[0]) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 12px', background: C.surface, border: `1px solid ${s.selectedImage?.model === 'original' ? C.accent : C.border}`, borderRadius: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 12px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, flexWrap: 'wrap' }}>
           <img src={s.imageBase64 || s.images[0]} alt="" style={{ width: 40, height: 40, borderRadius: 7, objectFit: 'cover' }} />
-          <span style={{ fontSize: 12.5, color: C.textMuted, flex: 1, minWidth: 160 }}>¿Ya tenés tu imagen lista? Usala tal cual, sin generar nada.</span>
-          <Btn small ghost={s.selectedImage?.model !== 'original'} onClick={() => onPick({ key: 'own', label: 'Mi imagen', description: 'Tu imagen, sin generar (0 créditos)', prompt: '', url: s.imageBase64 || s.images[0], model: 'original' })}>
-            {s.selectedImage?.model === 'original' ? '✓ Usando mi imagen' : '🖼️ Usar mi imagen (0 créditos)'}
+          <span style={{ fontSize: 12.5, color: C.textMuted, flex: 1, minWidth: 160 }}>Sin gastar créditos: adaptamos a los 3 formatos de Meta (Reel 9:16, Feed 4:5, 1:1).</span>
+          <Btn small ghost={s.selectedImage?.model !== 'own'} onClick={() => buildFormatSet('own')} disabled={tplLoading} title="Usa TU imagen tal cual y la adapta a los 3 formatos de Meta Ads">
+            {tplLoading ? 'Armando…' : s.selectedImage?.model === 'own' ? '✓ Mi imagen · 3 formatos' : '🖼️ Usar mi imagen — 3 formatos (0 créditos)'}
           </Btn>
-          <Btn small ghost={s.selectedImage?.model !== 'template'} onClick={buildOfferTemplate} disabled={tplLoading} title="Arma un ad de oferta con tu producto REAL (pixel-perfect) y texto/precio nítidos, sin IA">
-            {tplLoading ? 'Armando…' : s.selectedImage?.model === 'template' ? '✓ Plantilla lista · rehacer' : `🏷️ Plantilla de oferta — productos reales${(s.images?.length ?? 0) > 1 ? ` (${s.images.length})` : ''} (0 créditos)`}
+          <Btn small ghost={s.selectedImage?.model !== 'template'} onClick={() => buildFormatSet('template')} disabled={tplLoading} title="Arma un ad de oferta con tu producto REAL (pixel-perfect) y texto/precio nítidos, en los 3 formatos">
+            {tplLoading ? 'Armando…' : s.selectedImage?.model === 'template' ? '✓ Plantilla · 3 formatos' : `🏷️ Plantilla de oferta — 3 formatos${(s.images?.length ?? 0) > 1 ? ` · ${s.images.length} prod.` : ''} (0 créditos)`}
           </Btn>
-        </div>
-      )}
-
-      {/* Preview de la imagen elegida sin IA (plantilla / mi imagen) */}
-      {(s.selectedImage?.model === 'template' || s.selectedImage?.model === 'original') && (
-        <div style={{ marginBottom: 18, textAlign: 'center' }}>
-          <div style={{ display: 'inline-block', borderRadius: 14, overflow: 'hidden', border: `2px solid ${C.accent}`, maxWidth: 320 }}>
-            <img src={s.selectedImage.url} alt="creativo" style={{ width: '100%', display: 'block' }} />
-          </div>
-          <div style={{ marginTop: 8, display: 'flex', gap: 8, justifyContent: 'center' }}>
-            <Btn small ghost onClick={() => onDownload(s.selectedImage)}>⬇ Descargar</Btn>
-            <Btn small onClick={onNext}>Continuar a video →</Btn>
-          </div>
         </div>
       )}
 
@@ -883,10 +850,12 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))', gap: 14 }}>
           {s.variants.map((v: ImageVariant) => {
             const sel = s.selectedImage?.url === v.url;
+            const vf = fmtOf(v.key);
+            const noAI = v.model === 'own' || v.model === 'template';
             return (
               <div key={v.key} style={{ borderRadius: 14, overflow: 'hidden', border: `2px solid ${sel ? C.accent : C.border}`, background: C.surface }}>
-                <div style={{ aspectRatio: s.format === '1:1' ? '1' : s.format === '4:5' ? '4/5' : '9/16', background: C.surface2 }}>
-                  <img src={v.url} alt={v.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div style={{ aspectRatio: vf === '1:1' ? '1' : vf === '4:5' ? '4/5' : '9/16', background: C.surface2 }}>
+                  <img src={v.url} alt={v.label} style={{ width: '100%', height: '100%', objectFit: noAI ? 'contain' : 'cover' }} />
                 </div>
                 <div style={{ padding: 10 }}>
                   <div style={{ fontWeight: 700, fontSize: 13 }}>{v.label}</div>

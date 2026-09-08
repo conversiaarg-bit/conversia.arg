@@ -133,6 +133,17 @@ export default function NewCampaign() {
   const [productPhotoUrl, setProductPhotoUrl] = useState<string | null>(null);
   const [autoGen, setAutoGen] = useState(false); // generar los 3 formatos automáticamente al venir del Studio
 
+  // Creativos ya generados en el Studio ("Mis creativos") para reutilizarlos acá
+  const [myCreatives, setMyCreatives] = useState<string[]>([]);
+  useEffect(() => {
+    creativeApi.list()
+      .then((list: any[]) => setMyCreatives((Array.isArray(list) ? list : []).map(c => c.output_url).filter(Boolean).slice(0, 12)))
+      .catch(() => setMyCreatives([]));
+  }, []);
+  const useMyCreatives = () => { if (myCreatives.length) setCreativeImages(myCreatives.slice(0, 3)); };
+  // Al llegar al paso Creativos, si no hay nada cargado, autocompletar con los del Studio.
+  useEffect(() => { if (step === 3 && !creativeImages.length && myCreatives.length) setCreativeImages(myCreatives.slice(0, 3)); }, [step, myCreatives]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Autocompletar cuando venimos de "Crear campaña" del Studio (Creativos IA).
   const location = useLocation();
   useEffect(() => {
@@ -525,7 +536,12 @@ export default function NewCampaign() {
                     Creativos por IA
                     {photoUrl && <span style={{ fontSize: 10, color: C.green, marginLeft: 8, fontFamily: "'DM Mono',monospace" }}>✓ usando tu foto</span>}
                   </div>
-                  <button className="btn btn-p" style={{ marginLeft: 'auto', fontSize: 12, padding: '7px 13px' }} onClick={genCreatives} disabled={generatingImages}>
+                  {myCreatives.length > 0 && (
+                    <button className="btn btn-g" style={{ marginLeft: 'auto', fontSize: 12, padding: '7px 13px' }} onClick={useMyCreatives} title="Usar los creativos que ya generaste en el Studio">
+                      🖼️ Usar mis creativos del Studio
+                    </button>
+                  )}
+                  <button className="btn btn-p" style={{ marginLeft: myCreatives.length ? 0 : 'auto', fontSize: 12, padding: '7px 13px' }} onClick={genCreatives} disabled={generatingImages}>
                     {generatingImages ? <><Spinner size={12} color="#fff" /> Generando…</> : '✨ Generar 3 con IA'}
                   </button>
                 </div>
