@@ -656,15 +656,14 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
   // Plantilla de OFERTA por CANVAS: producto REAL (pixel-perfect) + texto/precio con fuentes
   // reales (nítido, sin gibberish). NO usa IA para el texto → el producto queda idéntico.
   const buildOfferTemplate = async () => {
-    if (!productImg) return;
+    const allImgs: string[] = (s.images?.length ? s.images : [productImg]).filter(Boolean);
+    if (!allImgs.length) return;
     setTplLoading(true);
     try {
-      // Cargar la imagen como dataURL (fetch→blob) para que el canvas NUNCA quede tainted al exportar.
-      let src = productImg;
-      if (!src.startsWith('data:')) {
-        try { const rb = await fetch(productImg); const bl = await rb.blob(); src = await new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(bl); }); } catch { /* usamos la url directa */ }
-      }
-      const img: HTMLImageElement = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = src; });
+      // Cargar TODAS las imágenes como dataURL (fetch→blob) → el canvas NUNCA queda tainted.
+      const toData = async (u: string) => { if (u.startsWith('data:')) return u; try { const rb = await fetch(u); const bl = await rb.blob(); return await new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(bl); }); } catch { return u; } };
+      const load = async (u: string) => { const d = await toData(u); return new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = d; }); };
+      const imgs = await Promise.all(allImgs.map(load));
       const [W, H] = s.format === '1:1' ? [1080, 1080] : s.format === '4:5' ? [1080, 1350] : [1080, 1920];
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const ctx = cv.getContext('2d'); if (!ctx) throw new Error('canvas');
@@ -688,12 +687,19 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
         ctx.font = `900 ${Math.round(W * 0.13)}px Arial`; ctx.fillStyle = '#111827'; ctx.fillText(`$${String(p.price).replace(/\$/g, '')}`, cx, y + W * 0.07);
         y += W * 0.14 + H * 0.01;
       }
-      // Producto (real, contain, con sombra)
-      const areaTop = y, areaH = H * 0.9 - y - H * 0.12;
-      const scale = Math.min((W * 0.82) / img.width, areaH / img.height);
-      const dw = img.width * scale, dh = img.height * scale;
-      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 20;
-      ctx.drawImage(img, cx - dw / 2, areaTop + (areaH - dh) / 2, dw, dh); ctx.restore();
+      // Producto(s) REAL(es), contain, con sombra. 1 → centrado; varios → grilla (combo).
+      const areaTop = y, areaH = H * 0.9 - y - H * 0.12, areaW = W * 0.92, areaX = (W - areaW) / 2;
+      const n = imgs.length;
+      const cols = n === 1 ? 1 : Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+      const cw2 = areaW / cols, ch2 = areaH / rows, pad = cw2 * 0.08;
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 12;
+      imgs.forEach((im, i) => {
+        const gx = areaX + (i % cols) * cw2, gy = areaTop + Math.floor(i / cols) * ch2;
+        const sc = Math.min((cw2 - pad * 2) / im.width, (ch2 - pad * 2) / im.height);
+        const dw = im.width * sc, dh = im.height * sc;
+        ctx.drawImage(im, gx + (cw2 - dw) / 2, gy + (ch2 - dh) / 2, dw, dh);
+      });
+      ctx.restore();
       // Beneficios (features) como líneas con check
       const feats = (p.features ?? []).slice(0, 3);
       let fy = areaTop + areaH + H * 0.015;
@@ -757,7 +763,7 @@ function StepImagen({ s, setFormat, setBrief, onGen, onRegen, onPick, onDownload
             {s.selectedImage?.model === 'original' ? '✓ Usando mi imagen' : '🖼️ Usar mi imagen (0 créditos)'}
           </Btn>
           <Btn small ghost={s.selectedImage?.model !== 'template'} onClick={buildOfferTemplate} disabled={tplLoading} title="Arma un ad de oferta con tu producto REAL (pixel-perfect) y texto/precio nítidos, sin IA">
-            {tplLoading ? 'Armando…' : s.selectedImage?.model === 'template' ? '✓ Plantilla lista' : '🏷️ Plantilla de oferta (0 créditos)'}
+            {tplLoading ? 'Armando…' : s.selectedImage?.model === 'template' ? '✓ Plantilla lista · rehacer' : `🏷️ Plantilla de oferta — productos reales${(s.images?.length ?? 0) > 1 ? ` (${s.images.length})` : ''} (0 créditos)`}
           </Btn>
         </div>
       )}
