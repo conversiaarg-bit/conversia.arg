@@ -410,7 +410,7 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
 
 "videoPrompt" (ENGLISH): Selfie Talking Head (${secs}s) for a Meta Ads Reel: 9:16 iPhone front-camera selfie talking-head of this SAME person holding one product bag speaking "<the script line below, in the ad's language>", engaging eye contact with the lens, natural gestures, daytime white balance, sharp background, handheld. The generated video includes 2 B-rolls: (1) a product-only cutaway showing ALL the products of the combo TOGETHER on a table (every bag visible and readable), daytime white balance; then (2) the same person using/enjoying the product naturally, handheld, not a showroom. Keep every product's packaging identical across all frames.
 
-"script": una frase corta, natural y vendedora en español rioplatense que la persona dice a cámara sobre el producto (con un CTA al final).`,
+"script": guion corto y ESPONTÁNEO en español rioplatense, como un creador de UGC que le recomienda algo a sus seguidores (NO publicidad tradicional, NO claims exagerados). Tono charlado y creíble, tipo "Les tengo que mostrar esto porque lo probé y me encantó...". Cierra con un CTA suave y natural.`,
       900,
     );
 
@@ -440,7 +440,7 @@ handheld iPhone front-camera selfie, 9:16, arm fully extended so the framing is 
     const finalScript = input.scriptOverride?.trim() || plan.script;
     const spoken = finalScript ? ` The person says in Spanish: "${finalScript}".` : '';
     const videoPromptFinal = exact
-      ? `9:16 iPhone selfie talking-head of this SAME person enthusiastically SELLING and SHOWCASING a product to the camera: excited expression, open-hand presenting gestures toward the lower-front of the frame (as if exhibiting the product), glancing between the lens and the product area, empty hands (not touching anything), subtle handheld motion, daytime white balance, sharp readable background.${spoken}`
+      ? `Authentic 9:16 smartphone UGC Reel, 10s, of this SAME real person (natural skin texture, natural eye movement, subtle imperfections, ordinary content-creator vibe — NOT a model, NOT CGI). Beats: 0-3s looks straight at the lens and starts talking naturally; 3-6s presents with an open-hand gesture toward the product area (front of the product kept clearly visible, logo unobstructed); 6-8s subtle handheld push-in toward the product area; 8-10s back to the lens finishing the recommendation. Empty hands (does not touch anything), natural conversational gestures, indoor natural light, realistic shadows, gentle handheld motion, realistic autofocus.${spoken}`
       : `${plan.videoPrompt || 'natural UGC selfie, person talking to camera holding the product'}${spoken}`;
     // Seedance SIEMPRE sin su audio (ruido ambiente).
     const vid = await this.videoProvider.generate({
