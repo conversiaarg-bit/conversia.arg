@@ -180,6 +180,24 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
     } finally { setRunning(false); }
   };
 
+  // Genera el VIDEO desde una imagen YA generada (la "adjunta" directo, sin regenerar).
+  const videoFromImage = async (baseImage: string) => {
+    if (!window.confirm(`Generar el video desde esta imagen usará ${oneShotCost} créditos (solo Seedance, no regenera la imagen). Tenés ${credits}. ¿Continuar?`)) return;
+    setMode('video'); setRunning(true); setErr(null); setPipe({ imageUrl: baseImage });
+    pushMsg('copilot', 'Animando tu imagen con Seedance (no se regenera nada, queda idéntica)…');
+    try {
+      const res = await creativeApi.ugcOneShot({ product: { name: name || 'Producto' }, baseImage, videoQuality: vq, duration: videoDur, scriptOverride: adScript || undefined });
+      setPipe({ imageUrl: baseImage, videoUrl: res.videoUrl || undefined });
+      setCredits(res.credits);
+      pushMsg('copilot', res.videoUrl ? '🎥 Video listo desde tu imagen — descargalo del nodo Video.' : '🖼️ La imagen quedó lista (video pendiente).');
+    } catch (e: any) {
+      const sc = e?.response?.data?.message === 'SIN_CREDITOS';
+      setErr(sc ? 'Te quedaste sin créditos.' : 'Falló la generación (no se descontaron créditos).');
+      pushMsg('copilot', sc ? '🪫 Te quedaste sin créditos.' : 'Falló la generación (no se descontaron créditos). Reintentá.');
+    } finally { setRunning(false); }
+  };
+  const curImage = mode === 'image' ? scenePipe.sceneUrl : pipe.imageUrl;
+
   const doneCount = Object.values(runs).filter(r => r.status === 'done').length;
   const [saved, setSaved] = useState(false);
 
@@ -554,6 +572,7 @@ export default function UgcCampaign({ costs, credits, setCredits, vqOptions = []
             onRun={mode === 'image' ? runImageScene : runOneShot} cost={mode === 'image' ? imgSceneCost : oneShotCost}
             productImages={comboImage ? [comboImage] : productImages} productDesc={name || 'Tu producto'}
             characterDesc={selectedAvatar ? 'Avatar elegido' : (avatar || 'Persona UGC (sintética)')}
+            canVideoFromImage={!!curImage} onVideoFromImage={() => curImage && videoFromImage(curImage)}
             onCancel={cancelRun} onTemplates={() => { loadAvatars(); setShowAvatars(true); }} />
         </div>
         <CopilotPanel messages={messages} running={running || planning} planned={true} onGenerate={mode === 'image' ? runImageScene : runOneShot} onSend={handleCopilot} onAttach={onCopilotAttach} />

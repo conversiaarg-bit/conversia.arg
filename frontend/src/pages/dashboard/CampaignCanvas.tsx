@@ -38,7 +38,7 @@ async function dlNode(url: string, name: string) {
 }
 
 // Pipeline fijo: Input → OpenAI (prompts + imagen) → Seedance (1 video) → Salida.
-export default function CampaignCanvas({ pipe, running, onRun, cost, productImages, productDesc, characterDesc, onCancel, onTemplates, mode = 'video' }: {
+export default function CampaignCanvas({ pipe, running, onRun, cost, productImages, productDesc, characterDesc, onCancel, onTemplates, mode = 'video', canVideoFromImage, onVideoFromImage }: {
   pipe: Pipe;
   running: boolean;
   onRun: () => void;
@@ -49,6 +49,8 @@ export default function CampaignCanvas({ pipe, running, onRun, cost, productImag
   onCancel?: () => void;
   onTemplates?: () => void;
   mode?: 'video' | 'image';
+  canVideoFromImage?: boolean;
+  onVideoFromImage?: () => void;
 }) {
   const [zoom, setZoom] = useState(0.7);
   const [pan, setPan] = useState({ x: 30, y: 20 });
@@ -152,7 +154,12 @@ export default function CampaignCanvas({ pipe, running, onRun, cost, productImag
               {onCancel && <button onClick={onCancel} style={{ ...tbtn, borderColor: C.red, color: C.red }}>✕ Cancelar</button>}
             </>
           ) : (
-            <button onClick={onRun} style={{ ...tbtn, background: C.accent, color: '#fff', border: 'none', fontWeight: 700 }}>{done ? (mode === 'image' ? '↻ Regenerar imagen' : '↻ Regenerar video') : (mode === 'image' ? '▶ Generar imagen' : '▶ Generar video')}</button>
+            <>
+              {canVideoFromImage && onVideoFromImage && (
+                <button onClick={onVideoFromImage} title="Usa la imagen ya generada como base y hace el video directamente (no regenera la imagen)" style={{ ...tbtn }}>🎬 Video con esta imagen</button>
+              )}
+              <button onClick={onRun} style={{ ...tbtn, background: C.accent, color: '#fff', border: 'none', fontWeight: 700 }}>{done ? (mode === 'image' ? '↻ Regenerar imagen' : '↻ Regenerar video') : (mode === 'image' ? '▶ Generar imagen' : '▶ Generar video')}</button>
+            </>
           )}
         </div>
         <style>{`@keyframes cvspin{to{transform:rotate(360deg)}}@keyframes cvbar{0%{left:-42%}100%{left:100%}}@keyframes cvdash{to{stroke-dashoffset:-16}}`}</style>

@@ -69,7 +69,7 @@ export const creativeApi = {
     D<{ imageUrl: string; videoUrl: string; creator: { key: string; name: string }; script: any; credits: number; creditsUsed: number }>(api.post('/creative/ugc', body, { timeout: 300_000, ...idem() })),
 
   // Pipeline único: OpenAI arma prompts → OpenAI imagen → Seedance 1 video
-  ugcOneShot: (body: { product: ProductInfo; referenceImages?: string[]; referenceImage?: string; avatarImage?: string; avatarDesc?: string; brief?: string; scriptOverride?: string; quality?: 'standard' | 'premium'; videoQuality?: string; format?: Fmt; duration?: '5' | '10'; exactProducts?: boolean }) =>
+  ugcOneShot: (body: { product: ProductInfo; referenceImages?: string[]; referenceImage?: string; avatarImage?: string; avatarDesc?: string; brief?: string; scriptOverride?: string; quality?: 'standard' | 'premium'; videoQuality?: string; format?: Fmt; duration?: '5' | '10'; exactProducts?: boolean; baseImage?: string }) =>
     D<{ imagePrompt: string; videoPrompt: string; script: string; imageUrl: string; videoUrl: string | null; videoPending?: boolean; credits: number; creditsUsed: number }>(api.post('/creative/ugc-oneshot', body, { timeout: 300_000, ...idem() })),
 
   // Campaña UGC (agente planifica escenas → nodos)

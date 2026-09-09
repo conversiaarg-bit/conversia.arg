@@ -382,11 +382,31 @@ JSON: { "creator": "${creator}", "scenes": [ {"key":"hook",...}, {"key":"message
     product: ProductInfo; referenceImages?: string[]; referenceImage?: string;
     avatarImage?: string; avatarDesc?: string; brief?: string; scriptOverride?: string;
     quality?: 'standard' | 'premium'; videoQuality?: string; format?: Fmt; duration?: '5' | '10';
-    exactProducts?: boolean;
+    exactProducts?: boolean; baseImage?: string;
   }) {
     const productPics = (input.referenceImages?.length ? input.referenceImages : [input.referenceImage]).filter(Boolean) as string[];
     const hasRef = productPics.length > 0;
     const secs = input.duration === '10' ? 10 : 5;
+
+    // VIDEO DESDE UNA IMAGEN YA GENERADA: si viene baseImage, NO regeneramos la imagen —
+    // animamos ESA imagen exacta directamente con Seedance (+ locución si la calidad la pide).
+    // Paso corto y confiable (sin gpt-image), y la imagen queda "adjunta" al video.
+    if (input.baseImage) {
+      if (!this.videoProvider.enabled) return { imageUrl: input.baseImage, videoUrl: null, videoPending: true, imagePrompt: '', videoPrompt: '', script: input.scriptOverride ?? '' };
+      const q = VIDEO_QUALITY[videoQuality(input.videoQuality)];
+      const finalScript = input.scriptOverride?.trim() || '';
+      const spoken = finalScript ? ` Spanish voiceover says: "${finalScript}".` : '';
+      const vid = await this.videoProvider.generate({
+        image: input.baseImage,
+        prompt: `Subtle, natural motion on THIS EXACT image — gentle handheld push-in, keep every element (product, packaging, text, person) identical, no morphing.${spoken} ${PREMIUM_VIDEO_DIRECTIVE}`,
+        duration: secs, resolution: q.resolution, audio: false,
+      });
+      const videoUrl = await this.finishVideo(vid.url, {
+        script: q.audio ? finalScript : undefined,
+        voiceKey: q.audio ? await this.detectVoiceKey(input.baseImage, input.avatarDesc) : undefined,
+      });
+      return { imageUrl: input.baseImage, videoUrl, model: vid.model, seconds: vid.seconds, imagePrompt: '', videoPrompt: 'base image', script: finalScript };
+    }
     const characterDesc = input.avatarDesc?.trim()
       || 'a realistic young adult (18–30), authentic UGC creator, friendly and relatable';
 
